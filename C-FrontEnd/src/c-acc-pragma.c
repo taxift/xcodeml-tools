@@ -248,8 +248,8 @@ int parse_ACC_pragma()
     }
 
 	// accomn extention directive
-    if(PG_IS_IDENT("ondevice")){
-	pg_ACC_pragma = ACC_ONDEVICE;
+    if(PG_IS_IDENT("target_dev")){
+	pg_ACC_pragma = ACC_TARGET_DEV;
 	pg_get_token();
 	if(pg_tok == '('){
 	    if((pg_ACC_list = parse_ACC_namelist()) == NULL) goto syntax_err;

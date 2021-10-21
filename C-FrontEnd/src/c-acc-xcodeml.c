@@ -46,7 +46,7 @@ out_ACC_PRAGMA(FILE *fp, int indent, int pragma_code, CExpr* expr)
       if(EXPR_L_SIZE(clauseList) != 0)
 	  out_ACC_name_list(fp, indent1, clauseList);
 	goto end;
-    case ACC_ONDEVICE:
+    case ACC_TARGET_DEV:
       if(EXPR_L_SIZE(clauseList) != 0)
   	  out_ACC_name_list(fp, indent1, clauseList);
       if(EXPR_L_SIZE(expr) != 0) outxChildren(fp,indent1,expr);
@@ -195,7 +195,7 @@ char *accDirectiveName(int c)
   case ACC_SYNC: return "SYNC";
   case ACC_FLUSH: return "FLUSH";
   case ACC_YIELD: return "YIELD";
-  case ACC_ONDEVICE: return "ONDEVICE";
+  case ACC_TARGET_DEV: return "TARGET_DEV";
   default: return "??ACC??";
   }
 }
