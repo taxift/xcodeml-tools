@@ -251,9 +251,7 @@ int parse_ACC_pragma()
     if(PG_IS_IDENT("target_dev")){
 	pg_ACC_pragma = ACC_TARGET_DEV;
 	pg_get_token();
-	if(pg_tok == '('){
-	    if((pg_ACC_list = parse_ACC_namelist()) == NULL) goto syntax_err;
-	} else pg_ACC_list = NULL;
+	if((pg_ACC_list = parse_ACC_namelist()) == NULL) goto syntax_err;
 	goto chk_end;
 	}
 	
