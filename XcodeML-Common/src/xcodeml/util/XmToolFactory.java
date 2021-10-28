@@ -134,8 +134,8 @@ public class XmToolFactory
     public XmDecompiler createDecompiler() throws XmException
     {
         try {
-            return (XmDecompiler)Class.forName(
-                _property.getDecompilerClassName()).newInstance();
+            return (XmDecompiler)Class.forName(_property.getDecompilerClassName())
+		.getDeclaredConstructor().newInstance();
         } catch(Exception e) {
             throw new XmException(e);
         }
@@ -147,8 +147,8 @@ public class XmToolFactory
     public XmDecompilerContext createDecompilerContext() throws XmException
     {
         try {
-            return (XmDecompilerContext)Class.forName(
-                _property.getDecompilerContextClassName()).newInstance();
+            return (XmDecompilerContext)Class.forName(_property.getDecompilerContextClassName())
+		.getDeclaredConstructor().newInstance();
         } catch(Exception e) {
             throw new XmException(e);
         }

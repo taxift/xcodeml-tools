@@ -1,7 +1,9 @@
 #include "F-front.h"
+#include "F-front-context.h"
 #include "F-output-xcodeml.h"
 #include "F-input-xmod.h"
 #include "module-manager.h"
+#include "omni_errors.h"
 
 /**
  * \file module-manager.c
@@ -17,7 +19,7 @@ struct module_manager {
 
 static struct module *find_module(const SYMBOL module_name,
                                   const SYMBOL submodule_name,
-                                  int for_submodule)
+                                  bool for_submodule)
 {
     struct module *mp;
     assert(module_name != NULL);
@@ -106,7 +108,6 @@ struct module *generate_current_module(SYMBOL mod_name, SYMBOL submod_name,
     list lp;
     struct depend_module *dep;
     struct module *mod = XMALLOC(struct module *, sizeof(struct module));
-    extern int flag_do_module_cache;
 
     *mod = (struct module){0};
     MODULE_NAME(mod) = mod_name;
@@ -137,72 +138,77 @@ struct module *generate_current_module(SYMBOL mod_name, SYMBOL submod_name,
         }
     }
 
-    if (flag_do_module_cache == TRUE)
+    if (module_cache_enabled())
         add_module(mod);
 
-    if (nerrors == 0) {
+    if (num_errors() == 0) {
         return mod;
     } else {
         return NULL;
     }
 }
 
-static void intermediate_file_name(char *filename, size_t len,
+static void intermediate_file_name(sds_string* filename,
                                    const struct module *mod,
                                    const char *extension)
 {
-    char tmp[FILE_NAME_LEN];
-    extern char *modincludeDirv;
-    if (modincludeDirv) {
-        snprintf(filename, strnlen(modincludeDirv, FILE_NAME_LEN) + 2, "%s/",
-                 modincludeDirv);
+    const size_t modincludeDirvI = vector_size(xmod_inc_dir_paths());
+    char** const modincludeDirv = (char** const)xmod_inc_dir_paths();
+
+    sds_string tmp = sdsempty();
+    if (modincludeDirvI > 0) {
+        *filename = sdscatprintf(*filename, "%s/", modincludeDirv[0]);
     }
     if (MODULE_IS_MODULE(mod)) {
-        snprintf(tmp, sizeof(tmp), "%s.%s", SYM_NAME(MODULE_NAME(mod)),
-                 extension);
+        tmp = sdscatprintf(tmp, "%s.%s", SYM_NAME(MODULE_NAME(mod)), extension);
     } else { /* mod is submodule */
-        snprintf(tmp, sizeof(tmp), "%s:%s.%s",
+        tmp = sdscatprintf(tmp, "%s:%s.%s",
                  SYM_NAME(SUBMODULE_ANCESTOR(mod)),
                  SYM_NAME(SUBMODULE_NAME(mod)), extension);
     }
-    strncat(filename, tmp, len - strnlen(filename, len) - 1);
+    *filename = sdscatsds(*filename, tmp);
+    sdsfree(tmp);
 }
 
-void xmod_file_name(char *filename, size_t len, const struct module *mod)
+void xmod_file_name(sds_string* filename, const struct module *mod)
 {
-    intermediate_file_name(filename, len, mod, "xmod");
+    intermediate_file_name(filename, mod, "xmod");
 }
 
-void xsmod_file_name(char *filename, size_t len, const struct module *mod)
+void xsmod_file_name(sds_string* filename, const struct module *mod)
 {
-    intermediate_file_name(filename, len, mod, "xsmod");
+    intermediate_file_name(filename, mod, "xsmod");
 }
 
 /**
  * export public identifiers
  */
-int export_xmod(struct module *mod)
+bool export_xmod(struct module *mod)
 {
-    char filename[FILE_NAME_LEN] = {0};
-    xmod_file_name(filename, sizeof(filename), mod);
     if (mod != NULL) {
-        return output_module_file(mod, filename);
+        sds_string filename = sdsempty();
+        xmod_file_name(&filename, mod);
+        const bool res = output_module_file(mod, filename);
+        sdsfree(filename);
+        return res;
     } else {
-        return FALSE;
+        return false;
     }
 }
 
 /**
  * export public/private identifiers
  */
-int export_xsmod(struct module *mod)
+bool export_xsmod(struct module *mod)
 {
-    char filename[FILE_NAME_LEN] = {0};
-    xsmod_file_name(filename, sizeof(filename), mod);
     if (mod != NULL) {
-        return output_module_file(mod, filename);
+        sds_string filename = sdsempty();
+        xsmod_file_name(&filename, mod);
+        const bool res = output_module_file(mod, filename);
+        sdsfree(filename);
+        return res;
     } else {
-        return FALSE;
+        return false;
     }
 }
 
@@ -265,10 +271,9 @@ int export_submodule(SYMBOL submod_name, SYMBOL mod_name, ID ids,
 
 static int import_intermediate_file(const SYMBOL name,
                                     const SYMBOL submodule_name,
-                                    struct module **pmod, int as_for_submodule)
+                                    struct module **pmod, bool as_for_submodule)
 {
     struct module *mod;
-    extern int flag_do_module_cache;
     const char *extension;
 
     if (!as_for_submodule) {
@@ -283,13 +288,15 @@ static int import_intermediate_file(const SYMBOL name,
 
     if (input_intermediate_file(name, submodule_name, &mod, extension)) {
         *pmod = mod;
-        if (flag_do_module_cache == TRUE)
+        if (module_cache_enabled())
             add_module(mod);
         return TRUE;
     }
 
     error("failed to import module '%s'", SYM_NAME(name));
-    exit(1);
+    FATAL_ERROR();
+    //Unreachable code
+    return FALSE;
 }
 
 /**
@@ -297,7 +304,7 @@ static int import_intermediate_file(const SYMBOL name,
  */
 int import_module(const SYMBOL name, struct module **pmod)
 {
-    return import_intermediate_file(name, NULL, pmod, FALSE);
+    return import_intermediate_file(name, NULL, pmod, false);
 }
 
 /**
@@ -306,22 +313,29 @@ int import_module(const SYMBOL name, struct module **pmod)
 int import_submodule(const SYMBOL module_name, const SYMBOL submodule_name,
                      struct module **pmod)
 {
-    return import_intermediate_file(module_name, submodule_name, pmod, TRUE);
+    return import_intermediate_file(module_name, submodule_name, pmod, true);
 }
 
 void include_module_file(FILE *fp, SYMBOL mod_name)
 {
     struct module *mod;
-    FILE *mod_fp;
+    FILE *mod_fp = NULL;
     int ch;
 
-    mod = find_module(mod_name, NULL, FALSE);
+    mod = find_module(mod_name, NULL, false);
     if (mod == NULL || mod->filepath == NULL)
         return;
-    if ((mod_fp = fopen(mod->filepath, "r")) == NULL) {
-        fatal("cannon open xmod file '%s'", mod->filepath);
+    if(!(ctx->files_cache && (mod_fp = io_cache_get_input_file(ctx->files_cache, mod->filepath))))
+    {
+        if ((mod_fp = fopen(mod->filepath, "r")) == NULL) {
+            fatal("cannon open xmod file '%s'", mod->filepath);
+        }
     }
     while ((ch = getc(mod_fp)) != EOF)
         putc(ch, fp);
+    if(mod_fp)
+    {
+        fclose(mod_fp);
+    }
     return;
 }

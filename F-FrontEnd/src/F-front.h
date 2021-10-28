@@ -11,15 +11,20 @@
 
 #include "config.h"
 #include <assert.h>
-#if SIZEOF_UNSIGNED_INT == 4
+#if (SIZEOF_UNSIGNED_INT == 4) || (defined(HAVE_INT32_T) && (SIZEOF_INT32_T == 4))
 #define HAS_INT32 1
 #endif
 
-#if SIZEOF_UNSIGNED_SHORT == 2
+#if (SIZEOF_UNSIGNED_SHORT == 2) || (defined(HAVE_INT16_T) && (SIZEOF_INT16_T == 2))
 #define HAS_INT16 1
 #endif
 
+#if defined(HAVE_INT64_T) && (SIZEOF_INT64_T == 8)
+#define HAS_INT64 1
+#endif
+
 #include "exc_platform.h"
+#include "utils.h"
 
 #if !defined(SIZEOF_UNSIGNED_LONG_LONG)
 #define SIZEOF_UNSIGNED_LONG_LONG (SIZEOF_UNSIGNED_LONG * 2)
@@ -28,10 +33,6 @@
 #define TRUE 1
 #define FALSE 0
 
-#ifdef SIMPLE_TYPE
-extern int Addr2Uint(void *x);
-#define ADDRX_PRINT_FMT "%d"
-#else /* SIMPLE_TYPE */
 #define Addr2Uint(X) ((uintptr_t)(X))
 
 #if __WORDSIZE == 64
@@ -39,7 +40,6 @@ extern int Addr2Uint(void *x);
 #else
 #define ADDRX_PRINT_FMT "%x"
 #endif
-#endif /* SIMPLE_TYPE */
 
 /*
  * Safe for the case if iter(p) (i.e. ID_NEXT(ip), EXT_ID_NEXT(ep)) is
@@ -57,6 +57,7 @@ extern int Addr2Uint(void *x);
 #include "C-OMP.h" /* OpenMP */
 #include "C-XMP.h" /* XcalableMP */
 #include "C-ACC.h" /* OpenACC */
+#include "bool.h"
 
 extern int lineno;
 extern int need_keyword;
@@ -67,13 +68,6 @@ extern int need_type_len;
 extern int need_check_user_defined;
 
 extern int lookup_col2(void);
-
-extern BASIC_DATA_TYPE defaultSingleRealType;
-extern BASIC_DATA_TYPE defaultDoubleRealType;
-extern BASIC_DATA_TYPE defaultIntType;
-
-extern int doImplicitUndef;
-extern int nerrors;
 
 /* max nam length */
 /* #define MAX_NAME_LEN_F77          31    /\* limitation of fortran 77, 90 *\/
@@ -88,9 +82,6 @@ extern int nerrors;
 #define DEFAULT_MAX_LINE_LEN_FREE 255
 
 extern unsigned long int maxStackSize;
-extern int debug_flag;
-extern FILE *debug_fp;
-extern FILE *diag_file;
 
 /* max file path length */
 #define MAX_PATH_LEN 8192
@@ -106,25 +97,16 @@ extern char *file_names[];
 #define EXITCODE_OK 0
 #define EXITCODE_ERR (-1)
 
-extern lineno_info *current_line;
 extern lineno_info *new_line_info(int f_id, int ln);
-extern int get_file_id(char *name);
-
-extern char *source_file_name, *output_file_name;
-extern FILE *source_file, *output_file;
+extern int get_file_id(const char *name);
 
 /* max number of include search path.  */
 #define MAXINCLUDEDIRV 256
 
-extern int fixed_format_flag;
-extern char *includeDirv[MAXINCLUDEDIRV + 1];
-extern int includeDirvI;
-extern const char *search_include_path(const char *);
+bool search_include_path(const char *filename, sds_string* path);
 
 /* max number of include search path.  */
 #define MAXMODINCLUDEDIRV 256
-
-extern char *xmoduleIncludeDirv;
 
 #include <libgen.h>
 
@@ -216,7 +198,7 @@ extern void push_env(ENV);
 extern void pop_env(void);
 
 /* control */
-typedef struct control {
+struct control {
     enum control_type ctltype;
     expv save;
     expv v1, v2;
@@ -228,7 +210,8 @@ typedef struct control {
 
     struct control *next;
     struct control *prev;
-} * CTL;
+};
+typedef struct control* CTL;
 
 #define CTL_TYPE(l) ((l)->ctltype)
 #define CTL_SAVE(l) ((l)->save)
@@ -341,7 +324,7 @@ struct eqv_set {
 
 #define IMPLICIT_ALPHA_NUM 26
 /* program unit control stack struct */
-typedef struct {
+struct unit_control{
     SYMBOL current_proc_name;
     enum name_class current_proc_class;
     ID current_procedure;
@@ -363,7 +346,8 @@ typedef struct {
     /* FOR INTERFACE */
     struct control *save_ctl;
     struct control *save_ctl_base;
-} * UNIT_CTL;
+};
+typedef struct unit_control* UNIT_CTL;
 
 #define UNIT_CTL_CURRENT_PROC_NAME(u) ((u)->current_proc_name)
 #define UNIT_CTL_CURRENT_PROC_CLASS(u) ((u)->current_proc_class)
@@ -466,7 +450,6 @@ extern int unit_ctl_level;
 #define LANGSPEC_F2003_SET (LANGSPEC_F2003_STRICT_SET | LANGSPEC_NONSTD)
 #define LANGSPEC_F2008_SET (LANGSPEC_F2008_STRICT_SET | LANGSPEC_NONSTD)
 #define LANGSPEC_DEFAULT_SET LANGSPEC_F2008_SET
-extern int langSpecSet;
 
 #define INTRINSIC_CLASS_NONE 0x0000
 #define INTRINSIC_CLASS_ATOMIC 0x0001
@@ -495,13 +478,7 @@ extern TYPE_DESC type_GNUMERIC_ALL;
 extern expv expv_constant_1, expv_constant_0, expv_constant_m1;
 extern expv expv_float_0;
 
-extern int OMP_flag;
-extern int XMP_flag;
-extern int XMP_coarray_flag;
-extern int ACC_flag;
 extern int PRAGMA_flag;
-extern int cond_compile_enabled;
-extern int leave_comment_flag;
 
 #define EMPTY_LIST list0(LIST)
 
@@ -554,15 +531,15 @@ extern int is_in_kind_compilation_flag_for_declare_ident;
 extern char *xmalloc _ANSI_ARGS_((int size));
 #define XMALLOC(type, size) ((type)xmalloc(size))
 
-extern void error EXC_VARARGS(char *, fmt);
-extern void fatal EXC_VARARGS(char *, fmt);
-extern void warning EXC_VARARGS(char *, fmt);
-extern void warning_lineno(lineno_info *info, char *fmt, ...);
+extern void error EXC_VARARGS(const char *, fmt);
+extern void fatal EXC_VARARGS(const char *, fmt);
+extern void warning EXC_VARARGS(const char *, fmt);
+extern void warning_lineno(lineno_info *info, const char *fmt, ...);
 extern void error_at_node EXC_VARARGS(expr, x);
 extern void error_at_id EXC_VARARGS(ID, x);
 extern void warning_at_node EXC_VARARGS(expr, x);
 extern void warning_at_id EXC_VARARGS(ID, x);
-extern void debug EXC_VARARGS(char *, fmt);
+extern void debug EXC_VARARGS(const char *, fmt);
 
 extern void initialize_lex _ANSI_ARGS_((void));
 extern void finalize_lex _ANSI_ARGS_((void));
@@ -611,7 +588,7 @@ extern void output_expr_statement _ANSI_ARGS_((expr v));
 
 extern ID declare_label _ANSI_ARGS_((int st_no, LABEL_TYPE type, int def_flag));
 extern ID declare_variable _ANSI_ARGS_((ID id));
-extern void declare_procedure _ANSI_ARGS_((enum name_class class, expr name,
+extern void declare_procedure _ANSI_ARGS_((enum name_class cls, expr name,
                                            TYPE_DESC type, expr args,
                                            expr prefix_spec, expr result_opt,
                                            expr bind_opt));
@@ -683,7 +660,7 @@ extern expv expv_char_len _ANSI_ARGS_((expv v));
 extern expv convertSubstrRefToPointerRef _ANSI_ARGS_((expv org, expv *lenVPtr));
 
 extern ID declare_function _ANSI_ARGS_((ID id));
-extern ID declare_ident _ANSI_ARGS_((SYMBOL s, enum name_class class));
+extern ID declare_ident _ANSI_ARGS_((SYMBOL s, enum name_class cls));
 extern ID declare_common_ident _ANSI_ARGS_((SYMBOL s));
 extern ID find_ident_head _ANSI_ARGS_((SYMBOL s, ID head));
 extern ID find_ident _ANSI_ARGS_((SYMBOL s));
@@ -698,7 +675,7 @@ extern ID find_struct_member_allow_private _ANSI_ARGS_(
 extern int type_is_parent_type _ANSI_ARGS_((TYPE_DESC parent, TYPE_DESC child));
 extern int type_is_extension _ANSI_ARGS_((TYPE_DESC ext, TYPE_DESC base));
 extern int type_is_unlimited_class _ANSI_ARGS_((TYPE_DESC tp));
-extern int type_is_class_of _ANSI_ARGS_((TYPE_DESC class,
+extern int type_is_class_of _ANSI_ARGS_((TYPE_DESC cls,
                                          TYPE_DESC derived_type));
 extern int type_has_kind _ANSI_ARGS_((TYPE_DESC tp));
 extern expv type_get_kind _ANSI_ARGS_((TYPE_DESC tp));
@@ -737,7 +714,7 @@ extern void unset_save_attr_in_dummy_args(EXT_ID ep);
 extern void declare_storage _ANSI_ARGS_((ID id, enum storage_class stg));
 
 extern void id_multilize _ANSI_ARGS_((ID id));
-extern ID multi_find_class _ANSI_ARGS_((ID id, enum name_class class));
+extern ID multi_find_class _ANSI_ARGS_((ID id, enum name_class cls));
 
 extern TYPE_DESC compile_type _ANSI_ARGS_((expr x, int allow_predecl));
 extern TYPE_DESC compile_basic_type _ANSI_ARGS_((expr x));
@@ -852,11 +829,11 @@ extern expv expv_reduce_conv_const _ANSI_ARGS_((TYPE_DESC tp, expv v));
 extern expv expv_inline_function _ANSI_ARGS_((expv left, expv right));
 extern omllint_t power_ii(omllint_t x, omllint_t n);
 
-extern char *basic_type_name _ANSI_ARGS_((BASIC_DATA_TYPE t));
-extern char *name_class_name _ANSI_ARGS_((enum name_class c));
-extern char *proc_class_name _ANSI_ARGS_((enum proc_class c));
-extern char *storage_class_name _ANSI_ARGS_((enum storage_class c));
-extern char *control_type_name _ANSI_ARGS_((enum control_type c));
+extern const char *basic_type_name _ANSI_ARGS_((BASIC_DATA_TYPE t));
+extern const char *name_class_name _ANSI_ARGS_((enum name_class c));
+extern const char *proc_class_name _ANSI_ARGS_((enum proc_class c));
+extern const char *storage_class_name _ANSI_ARGS_((enum storage_class c));
+extern const char *control_type_name _ANSI_ARGS_((enum control_type c));
 
 extern expv expv_cons _ANSI_ARGS_((enum expr_code code, TYPE_DESC tp, expv left,
                                    expv right));
@@ -865,7 +842,7 @@ extern expv expv_user_def_cons _ANSI_ARGS_((enum expr_code code, TYPE_DESC tp,
 extern expv expv_sym_term _ANSI_ARGS_((enum expr_code code, TYPE_DESC tp,
                                        SYMBOL name));
 extern expv expv_str_term _ANSI_ARGS_((enum expr_code code, TYPE_DESC tp,
-                                       char *str));
+                                       const char *str));
 extern expv expv_int_term _ANSI_ARGS_((enum expr_code code, TYPE_DESC tp,
                                        omllint_t i));
 extern expv expv_any_term _ANSI_ARGS_((enum expr_code code, void *p));
@@ -991,7 +968,7 @@ extern expv expr_array_index _ANSI_ARGS_((expr x));
 
 extern void compile_EQUIVALENCE_decl _ANSI_ARGS_((expr x));
 
-extern expv ExpandImpliedDoInDATA _ANSI_ARGS_((expv spec, expv new));
+extern expv ExpandImpliedDoInDATA _ANSI_ARGS_((expv spec, expv new_v));
 
 extern void compile_OMN_directive _ANSI_ARGS_((expr x));
 extern void begin_module _ANSI_ARGS_((expr name));
@@ -1009,10 +986,10 @@ extern EXT_ID define_external_function_id _ANSI_ARGS_((ID id));
 extern ID declare_function_result_id(SYMBOL s, TYPE_DESC tp);
 
 /* functions for converting enum to string */
-extern char *basic_type_name(BASIC_DATA_TYPE t);
-extern char *name_class_name(enum name_class c);
-extern char *proc_class_name(enum proc_class c);
-extern char *storage_class_name(enum storage_class c);
+extern const char *basic_type_name(BASIC_DATA_TYPE t);
+extern const char *name_class_name(enum name_class c);
+extern const char *proc_class_name(enum proc_class c);
+extern const char *storage_class_name(enum storage_class c);
 extern expv compile_set_expr _ANSI_ARGS_((expr x));
 extern expv compile_member_ref _ANSI_ARGS_((expr x));
 
@@ -1056,7 +1033,7 @@ extern void set_function_appearable(void);
 extern int expv_is_specification(expv x);
 
 /* create expr hold implict declaration information. */
-extern expr create_implicit_decl_expv(TYPE_DESC tp, char *first, char *second);
+extern expr create_implicit_decl_expv(TYPE_DESC tp, const char *first, const char *second);
 
 extern void compile_OMP_directive(expr v);
 int OMP_reduction_op(expr v);
@@ -1068,7 +1045,7 @@ int XMP_reduction_op(expr v);
 extern void compile_ACC_directive(expr v);
 int ACC_reduction_op(expr v);
 int ACC_num_attr(expr v);
-void ACC_check_num_attr(expr v, enum ACC_pragma attr);
+void ACC_check_num_attr(expr v, enum ACC_pragma_clause attr);
 
 #include "xcodeml-module.h"
 #include "F-module-procedure.h"

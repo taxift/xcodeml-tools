@@ -15,6 +15,8 @@
 #define _C_EXPR_H_
 
 #include "C-exprcode.h"
+#include <stdint.h>
+#include "bool.h"
 
 typedef int64_t omllint_t;
 typedef long double omldouble_t;
@@ -33,12 +35,13 @@ enum symbol_type {
 };
 
 /* symbol and symbol table */
-typedef struct symbol {
+struct symbol {
     struct symbol *s_next; /* backet chain */
-    char *s_name;
+    const char *s_name;
     enum symbol_type s_type;
     short int s_value;
-} * SYMBOL;
+};
+typedef struct symbol* SYMBOL;
 #define SYM_NEXT(sp) ((sp)->s_next)
 #define SYM_NAME(sp) ((sp)->s_name)
 #define SYM_TYPE(sp) ((sp)->s_type)
@@ -47,13 +50,13 @@ typedef struct symbol {
 extern SYMBOL find_symbol(const char *name);
 extern SYMBOL find_symbol_without_allocate(const char *name);
 
-extern int endlineno_flag;
-
-typedef struct {
+struct s_lineno_info {
     int ln_no;
     int end_ln_no;
     int file_id;
-} lineno_info;
+};
+
+typedef struct s_lineno_info lineno_info;
 
 /* de-syntax program is represented by this data structure. */
 typedef struct expression_node {
@@ -170,11 +173,13 @@ typedef expr expv;
 #define EXPV_COMPLEX_REAL(x) EXPV_LEFT(x)
 #define EXPV_COMPLEX_IMAG(x) EXPV_RIGHT(x)
 
-extern struct expr_code_info {
-    char code_info;
-    char *code_name;
-    char *operator_name;
-} expr_code_info[];
+struct expr_code_info_t {
+    const char code_info;
+    const char *code_name;
+    const char *operator_name;
+};
+
+extern const struct expr_code_info_t expr_code_info[];
 
 #define EXPR_CODE_NAME(code) expr_code_info[code].code_name
 #define EXPR_CODE_SYMBOL(code) expr_code_info[code].operator_name

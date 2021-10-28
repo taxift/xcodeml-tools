@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <alloca.h>
+#include "omni_errors.h"
 
 #ifdef ENABLE_UCHARDET
 #include <iconv.h>
@@ -12,17 +13,6 @@
 #endif
 
 // #define LEX_DEBUG 1
-
-/* Lexical analyzer, enable open mp.  */
-int OMP_flag = FALSE;
-int XMP_flag = FALSE;
-int ACC_flag = FALSE;
-
-/* lexical analyzer, enable conditional compilation.  */
-int cond_compile_enabled = FALSE;
-
-/* leave comemnt in xcodeml file using TEXT */
-int leave_comment_flag = FALSE;
 
 /* lexical analyzer */
 /* enable to parse for pragma.  */
@@ -47,18 +37,10 @@ int need_check_user_defined = TRUE; /* check the user defined dot id */
 
 int may_generic_spec = FALSE;
 
-int fixed_format_flag = FALSE;
-
-int max_line_len = -1; /* -1 when value is not set yet. */
-int max_cont_line = 255;
-
-/* enable comment char, 'c' in free format.  */
-int flag_force_c_comment = FALSE; /* does not set yet.  */
-
 #define QUOTE '\002' /* special quote mark */
 
 struct keyword_token {
-    char *k_name;
+    const char *k_name;
     int k_token;
 };
 
@@ -69,13 +51,7 @@ extern struct keyword_token end_keywords[];
 extern struct keyword_token type_keywords[];
 extern struct keyword_token do_keywords[];
 
-extern int ocl_flag;
-extern int cdir_flag;
-extern int pgi_flag;
-extern int max_name_len; //  maximum identifier name length
-extern int dollar_ok;    // accept '$' in identifier or not.
-
-int exposed_comma, exposed_eql;
+bool exposed_comma, exposed_eql;
 int paren_level;
 char *bufptr = NULL;        /* pointer running in st_buffer */
 char *st_buffer = NULL;     /* one statement buffer */
@@ -98,17 +74,16 @@ static int convert_encoding(void);
 int prevline_is_inQuote = 0;
 int prevline_is_inComment = FALSE;
 
-expr st_name; /* statement name */
+extern expr st_name; /* statement name */
 
 static int line_count = 0;
-lineno_info *current_line;
 int pre_read = 0;
 lineno_info read_lineno;
 
 int is_using_module = FALSE;
 
 struct saved_file_state {
-    FILE *save_fp;
+    str_stream save_in_str_strm;
     lineno_info *save_line;
     int save_pre_read;
     int is_using_module; /* TRUE if file is module file. */
@@ -116,7 +91,7 @@ struct saved_file_state {
     char *save_buffer;
     char *save_stn_cols;
     /* when include by USE, must specify -force-free-format.  */
-    int save_fixed_format_flag;
+    bool save_fixed_format_flag;
     int save_no_countup; /* reach ';', we do not count up the line number.  */
 #ifdef ENABLE_UCHARDET
     iconv_t cd;
@@ -141,14 +116,14 @@ enum lex_state {
     LEX_RET_EOS
 };
 
-int st_CONDCOMPL_flag;
-int st_PRAGMA_flag;
-int st_OCL_flag;
-int st_OMP_flag;
-int st_XMP_flag;
-int st_ACC_flag;
-int st_comment_line_flag;
-int st_PGI_flag;
+bool st_CONDCOMPL_flag;
+bool st_PRAGMA_flag;
+bool st_OCL_flag;
+bool st_OMP_flag;
+bool st_XMP_flag;
+bool st_ACC_flag;
+bool st_comment_line_flag;
+bool st_PGI_flag;
 
 enum lex_state lexstate;
 
@@ -171,17 +146,17 @@ sentinel_list sentinels;
 
 /* sentinel list functions */
 static void init_sentinel_list(sentinel_list *p);
-static int add_sentinel(sentinel_list *p, char *name);
+static int add_sentinel(sentinel_list *p, const char *name);
 static unsigned int sentinel_count(sentinel_list *p);
 static char *sentinel_name(sentinel_list *p, unsigned int n);
-static int sentinel_index(sentinel_list *p, char *name);
+static int sentinel_index(sentinel_list *p, const char *name);
 
 /* buffer for progma with pragma key and rest of line.  */
 static char *pragmaBuf = NULL;
 
-extern struct keyword_token OMP_keywords[];
-extern struct keyword_token XMP_keywords[];
-extern struct keyword_token ACC_keywords[];
+extern const struct keyword_token OMP_keywords[];
+extern const struct keyword_token XMP_keywords[];
+extern const struct keyword_token ACC_keywords[];
 
 /* read_line return value */
 #define ST_EOF 0
@@ -213,18 +188,18 @@ static int token_history_count = 0;
 static int *token_history_buf = NULL;
 
 static int read_initial_line _ANSI_ARGS_((void));
-static int classify_statement _ANSI_ARGS_((void));
-static int token _ANSI_ARGS_((void));
+static int classify_statement(YYSTYPE* yylval);
+static int token(YYSTYPE* yylval);
 static int is_not_keyword _ANSI_ARGS_((void));
-static int get_keyword _ANSI_ARGS_((struct keyword_token * ks));
-static int get_keyword_optional_blank _ANSI_ARGS_((int class));
+static int get_keyword _ANSI_ARGS_((const struct keyword_token * ks));
+static int get_keyword_optional_blank _ANSI_ARGS_((int cls));
 static int readline_free_format _ANSI_ARGS_((void));
-static int read_number _ANSI_ARGS_((void));
+static int read_number(YYSTYPE* yylval);
 static int is_identifier_letter _ANSI_ARGS_((char c, int pos));
-static int read_identifier _ANSI_ARGS_((void));
+static int read_identifier(YYSTYPE* yylval);
 
 static void string_to_integer _ANSI_ARGS_((omllint_t * p, char *cp, int radix));
-static double convert_str_double _ANSI_ARGS_((char *s));
+static double convert_str_double _ANSI_ARGS_((const char *s));
 
 static int read_initial_line _ANSI_ARGS_((void));
 static int read_fixed_format _ANSI_ARGS_((void));
@@ -240,14 +215,14 @@ static int find_last_ampersand _ANSI_ARGS_((char *buf, int *len));
 
 static void save_format_str _ANSI_ARGS_((void));
 
-static int OMP_lex_token();
-static int XMP_lex_token();
-static int ACC_lex_token();
+static int OMP_lex_token(YYSTYPE* yylval);
+static int XMP_lex_token(YYSTYPE* yylval);
+static int ACC_lex_token(YYSTYPE* yylval);
 
 /* for free format.  */
 /* pragma string setter. */
-static void set_pragma_str _ANSI_ARGS_((char *));
-static void append_pragma_str _ANSI_ARGS_((char *));
+static void set_pragma_str _ANSI_ARGS_((const char *));
+static void append_pragma_str _ANSI_ARGS_((const char *));
 
 static void restore_file(void);
 
@@ -270,27 +245,24 @@ static void debugOutStatement()
         *nlcr = '\0';
     }
 
-    if (fixed_format_flag) {
-        fprintf(debug_fp, "%6d:'%s'|\"%s\"\n", read_lineno.ln_no, stn_cols,
+    if (ctx->fixed_format_enabled) {
+        fprintf(debug_output(), "%6d:'%s'|\"%s\"\n", read_lineno.ln_no, stn_cols,
                 trimBuf);
     } else {
-        fprintf(debug_fp, "%6d:\"%s\"\n", read_lineno.ln_no, trimBuf);
+        fprintf(debug_output(), "%6d:\"%s\"\n", read_lineno.ln_no, trimBuf);
     }
-    fflush(debug_fp);
+    fflush(debug_output());
 }
 
 static int is_top_level(void) { return unit_ctl_level == 0; }
 
 void initialize_lex()
 {
-    extern int mcLn_no;
-    extern long mcStart;
-
-    if (fixed_format_flag)
+    if (ctx->fixed_format_enabled)
         line_buf_size = 300; // for bug #397
     else
-        line_buf_size = max_line_len + 2 + 1; /* CRLF + \0 */
-    st_buf_size = max_line_len * (max_cont_line + 1) + 1;
+        line_buf_size = max_line_len() + 2 + 1; /* CRLF + \0 */
+    st_buf_size = max_line_len() * (max_cont_line() + 1) + 1;
 
     line_buffer = XMALLOC(char *, line_buf_size);
     st_buffer = XMALLOC(char *, st_buf_size);
@@ -307,24 +279,15 @@ void initialize_lex()
     memset(last_ln_nos, 0, sizeof(last_ln_nos));
 
     /* set lineno info as default */
-    if (mcLn_no == -1)
-        read_lineno.ln_no = 0;
-    else {
-        if (fseek(source_file, mcStart, SEEK_SET) == -1) {
-            error("internal comiler error: cannot seek given start point in "
-                  "initialize_lex()");
-            exit(-1);
-        }
-        read_lineno.ln_no = mcLn_no;
-    }
-    if (source_file_name != NULL)
-        read_lineno.file_id = get_file_id(source_file_name);
+    read_lineno.ln_no = 0;
+    if (sdslen(ctx->src_file_path) != 0)
+        read_lineno.file_id = get_file_id(ctx->src_file_path);
     else
         read_lineno.file_id = get_file_id("<stdin>");
 
     lexstate = LEX_NEW_STATEMENT;
-    exposed_comma = FALSE;
-    exposed_eql = FALSE;
+    exposed_comma = false;
+    exposed_eql = false;
     paren_level = 0;
 
     init_sentinel_list(&sentinels);
@@ -333,11 +296,11 @@ void initialize_lex()
     add_sentinel(&sentinels, XMP_SENTINEL);
     add_sentinel(&sentinels, ACC_SENTINEL);
     add_sentinel(&sentinels, DIR_SENTINEL);
-    if (ocl_flag)
+    if (ocl_enabled())
         add_sentinel(&sentinels, OCL_SENTINEL);
-    if (cdir_flag)
+    if (cdir_enabled())
         add_sentinel(&sentinels, CDIR_SENTINEL);
-    if (pgi_flag)
+    if (pgi_enabled())
         add_sentinel(&sentinels, PGI_SENTINEL);
 }
 
@@ -358,9 +321,9 @@ static void prepare_for_new_statement(void)
     need_keyword = FALSE;
 }
 
-static int is_keyword(int k, struct keyword_token *tblPtr)
+static int is_keyword(int k, const struct keyword_token *tblPtr)
 {
-    struct keyword_token *kwPtr;
+    const struct keyword_token *kwPtr;
 
     /*
      * special treatment for I/O.
@@ -509,7 +472,7 @@ int is_function_statement_context()
     }
 }
 
-int check_ident_context(char *name)
+int check_ident_context(const char *name)
 {
     int ret = IDENTIFIER;
 
@@ -530,12 +493,12 @@ int check_ident_context(char *name)
         case ELEMENTAL:
         case MODULE:
         case IMPURE:
-            if (fixed_format_flag) {
+            if (ctx->fixed_format_enabled) {
                 if (strncasecmp(name, "function", 8) == 0 &&
                     is_function_statement_context()) {
                     ret = FUNCTION;
                     if (strcasecmp(name, "function") != 0) {
-                        char *rest = name + 8;
+                        const char *rest = name + 8;
                         auxIdentX = GEN_NODE(IDENT, find_symbol(rest));
                     }
                 }
@@ -574,18 +537,18 @@ int check_ident_context(char *name)
 }
 
 /* lexical analyzer */
-int yylex()
+int yylex(YYSTYPE* yylval, ffront_context* ctx)
 {
     if (token_history_buf == NULL)
-        token_history_buf = malloc(sizeof(int) * token_history_buf_size);
+        token_history_buf = (int*)malloc(sizeof(int) * token_history_buf_size);
 
     int curToken = UNKNOWN;
 
     if (auxIdentX != NULL) {
         curToken = IDENTIFIER;
-        yylval.val = auxIdentX;
+        yylval->val = auxIdentX;
     } else {
-        curToken = yylex0();
+        curToken = yylex0(yylval, ctx);
     }
 
     // record history counter
@@ -619,7 +582,7 @@ int yylex()
             expect_next_token_is_keyword = FALSE;
         }
     } else if (curToken == IDENTIFIER) {
-        curToken = check_ident_context(SYM_NAME(EXPR_SYM(yylval.val)));
+        curToken = check_ident_context(SYM_NAME(EXPR_SYM(yylval->val)));
         token_history_buf[token_history_count - 1] = curToken;
     }
 
@@ -632,7 +595,7 @@ Done:
     return curToken;
 }
 
-static int yylex0()
+static int yylex0(YYSTYPE* yylval, ffront_context* ctx)
 {
     int t;
     static int tkn_cnt;
@@ -650,30 +613,28 @@ static int yylex0()
                 return (ST_EOF);
             }
 
-            bufptr = st_buffer;
-
             /* set bufptr st_buffer */
             bufptr = st_buffer;
-            if (st_OMP_flag && OMP_flag) {
+            if (st_OMP_flag && openmp_enabled()) {
                 lexstate = LEX_OMP_TOKEN;
                 for (p = bufptr; *p != '\0'; p++)
                     *p = TOLOWER(*p);
                 return OMPKW_LINE;
             }
-            if (st_XMP_flag && XMP_flag) {
+            if (st_XMP_flag && xmp_enabled()) {
                 lexstate = LEX_XMP_TOKEN;
                 for (p = bufptr; *p != '\0'; p++)
                     *p = TOLOWER(*p);
                 return XMPKW_LINE;
             }
-            if (st_ACC_flag && ACC_flag) {
+            if (st_ACC_flag && openacc_enabled()) {
                 lexstate = LEX_ACC_TOKEN;
                 for (p = bufptr; *p != '\0'; p++)
                     *p = TOLOWER(*p);
                 return ACCKW_LINE;
             }
             if (st_OMP_flag || st_XMP_flag || st_ACC_flag || st_PRAGMA_flag ||
-                (st_CONDCOMPL_flag && !OMP_flag && !cond_compile_enabled)) {
+                (st_CONDCOMPL_flag && !openmp_enabled() && !conditional_compile_enabled())) {
                 lexstate = LEX_PRAGMA_TOKEN;
                 return PRAGMA_HEAD;
             }
@@ -689,7 +650,7 @@ static int yylex0()
         first:
             tkn_cnt = 1;
 
-            st_class = classify_statement();
+            st_class = classify_statement(yylval);
             if (st_class == FORMAT) {
                 save_format_str();
                 lexstate = LEX_RET_EOS;
@@ -718,7 +679,7 @@ static int yylex0()
                 bufptr += 5;
                 return KW_WHILE;
             }
-            t = token();
+            t = token(yylval);
             if (t == FORMAT) {
                 /*
                  * "format" shouldn't be here...
@@ -735,19 +696,19 @@ static int yylex0()
             return (EOS);
 
         case LEX_OMP_TOKEN:
-            t = OMP_lex_token();
+            t = OMP_lex_token(yylval);
             if (t == EOS)
                 lexstate = LEX_NEW_STATEMENT;
             return t;
 
         case LEX_XMP_TOKEN:
-            t = XMP_lex_token();
+            t = XMP_lex_token(yylval);
             if (t == EOS)
                 lexstate = LEX_NEW_STATEMENT;
             return t;
 
         case LEX_ACC_TOKEN:
-            t = ACC_lex_token();
+            t = ACC_lex_token(yylval);
             if (t == EOS)
                 lexstate = LEX_NEW_STATEMENT;
             return t;
@@ -790,7 +751,7 @@ static void save_format_str()
     formatString = strdup(fmt);
 }
 
-static void set_pragma_str(char *s)
+static void set_pragma_str(const char *s)
 {
     if (pragmaString != NULL) {
         free(pragmaString);
@@ -804,7 +765,7 @@ static void set_pragma_str(char *s)
     pragmaString = strdup(pragmaBuf);
 }
 
-static void append_pragma_str(char *s)
+static void append_pragma_str(const char *s)
 {
     if (s == NULL)
         return; /* no change */
@@ -841,18 +802,18 @@ char *lex_get_line()
     return (s);
 }
 
-void yyerror(s) const char *s;
+void yyerror(ffront_context* ctx, const char *s)
 {
     error("%s", s);
 }
 
-char *lexline(n) int *n;
+const char *lexline(int *n)
 {
     *n = strlen(bufptr);
     return (bufptr);
 }
 
-static int token()
+static int token(YYSTYPE* yylval)
 {
     register char ch, *p;
     int t;
@@ -900,11 +861,12 @@ static int token()
             t = 0;
             while (isdigit((int)*bufptr))
                 t = t * 10 + *bufptr++ - '0';
-            yylval.val = GEN_NODE(INT_CONSTANT, t);
+            yylval->val = GEN_NODE(INT_CONSTANT, t);
             return CONSTANT;
         } else
             return *bufptr++;
     }
+    fflush(stdout);
 
     switch (ch = *bufptr++) {
         case '\0':
@@ -917,7 +879,7 @@ static int token()
                 else
                     *p++ = ch;
             *p = 0;
-            yylval.val = GEN_NODE(STRING_CONSTANT, strdup(buffio));
+            yylval->val = GEN_NODE(STRING_CONSTANT, strdup(buffio));
             return (CONSTANT); /* hollerith */
         case '=':
             if (*bufptr == '=') {
@@ -984,7 +946,7 @@ static int token()
                 int save_n = need_keyword;
                 int save_p = paren_level;
                 need_keyword = TRUE;
-                t = token();
+                t = token(yylval);
 
                 switch (token_history_buf[token_history_count - 1]) {
                     case CLASS:
@@ -1134,7 +1096,7 @@ static int token()
                         user_defined[i] = *bufptr++;
                 }
                 s = find_symbol(user_defined);
-                yylval.val = GEN_NODE(IDENT, s);
+                yylval->val = GEN_NODE(IDENT, s);
                 return USER_DEFINED_OP;
             } else
                 return '.';
@@ -1163,7 +1125,7 @@ static int token()
         case '9':
         number:       /* reading number */
             bufptr--; /* back */
-            return read_number();
+            return read_number(yylval);
 
         case '[':
         case ']':
@@ -1172,7 +1134,7 @@ static int token()
         default:
             if (isalpha(ch) || ch == '_') {
                 bufptr--; /* back */
-                return read_identifier();
+                return read_identifier(yylval);
             } else
                 error("bad char %c(0x%x)", ch, ch & 0xFF);
             return UNKNOWN;
@@ -1181,7 +1143,7 @@ static int token()
 
 static int is_identifier_letter(char c, int pos)
 {
-    if (dollar_ok) {
+    if (dollar_in_id_enabled()) {
         /* '_' and '$' are never placed on beginning */
         return (isalnum((int)c) || ((pos >= 1) && ((c == '_') || (c == '$'))));
     } else {
@@ -1190,12 +1152,12 @@ static int is_identifier_letter(char c, int pos)
     }
 }
 
-static int read_identifier()
+static int read_identifier(YYSTYPE* yylval)
 {
     int tkn_len;
     char *p, ch;
     int excess_name_length = 0;
-    enum expr_code defined_io = 0;
+    enum expr_code defined_io = ERROR_NODE;
 
     p = buffio;
     for (tkn_len = 0; UNDER_LINE_BUF_SIZE(buffio, p) &&
@@ -1203,7 +1165,7 @@ static int read_identifier()
          p++, bufptr++) {
         *p = *bufptr;
         tkn_len++;
-        if (tkn_len > max_name_len && is_using_module == FALSE) {
+        if (tkn_len > max_id_name_len() && is_using_module == FALSE) {
             excess_name_length++;
         }
     }
@@ -1252,7 +1214,7 @@ static int read_identifier()
             error("can't determine radix");
         }
         string_to_integer(&v, buffio, radix);
-        yylval.val = make_int_enode(v);
+        yylval->val = make_int_enode(v);
         return (CONSTANT);
     }
 #ifdef YYDEBUG
@@ -1280,7 +1242,7 @@ static int read_identifier()
             goto returnId;
         } else
             bufptr++;
-        t = token();
+        t = token(yylval);
         while (isspace(*bufptr)) /* skip white space */
             bufptr++;
         if (*bufptr != ')') {
@@ -1373,7 +1335,7 @@ static int read_identifier()
                     error("syntax error. ");
                     break;
             }
-            yylval.val = list1(F95_GENERIC_SPEC, list0(code));
+            yylval->val = list1(F95_GENERIC_SPEC, list0(code));
         } else if (defined_io != 0) {
             enum expr_code code = ERROR_NODE;
             switch (t) {
@@ -1387,19 +1349,19 @@ static int read_identifier()
                     error("syntax error. ");
                     break;
             }
-            yylval.val = list1(defined_io, list0(code));
+            yylval->val = list1(defined_io, list0(code));
         } else {
-            yylval.val = list1(F95_USER_DEFINED, yylval.val);
+            yylval->val = list1(F95_USER_DEFINED, yylval->val);
         }
         return GENERIC_SPEC;
     }
 
 returnId:
-    yylval.val = GEN_NODE(IDENT, find_symbol(buffio));
+    yylval->val = GEN_NODE(IDENT, find_symbol(buffio));
     return (IDENTIFIER);
 }
 
-static int read_number()
+static int read_number(YYSTYPE* yylval)
 {
     typedef enum {
         PREC_UNKNOWN = 0,
@@ -1482,19 +1444,19 @@ static int read_number()
                 break;
             }
         }
-        yylval.val = make_float_enode(exp_code, convert_str_double(buffio),
+        yylval->val = make_float_enode(exp_code, convert_str_double(buffio),
                                       strdup(buffio));
     } else {
         omllint_t v = 0;
         string_to_integer(&v, buffio, 10);
-        yylval.val = make_int_enode(v);
+        yylval->val = make_int_enode(v);
     }
     return (CONSTANT);
 }
 
-static void string_to_integer(p, cp, radix) omllint_t *p;
-char *cp;
-int radix;
+static void string_to_integer(omllint_t *p,
+        char *cp,
+        int radix)
 {
     char ch;
     int x;
@@ -1525,7 +1487,7 @@ int radix;
          (omllint_t)v0;
 }
 
-static double convert_str_double(s) char *s;
+static double convert_str_double(const char *s)
 {
     char v[100];
     register char *t;
@@ -1549,7 +1511,7 @@ static double convert_str_double(s) char *s;
  * nature.
  */
 
-static int classify_statement()
+static int classify_statement(YYSTYPE* yylval)
 {
     register char *p, *save;
 
@@ -1563,11 +1525,11 @@ static int classify_statement()
 
     /* st_name: ....? */
     if ((st_class == UNKNOWN) ||
-        (fixed_format_flag &&
+        (ctx->fixed_format_enabled &&
          (isalpha((int)*bufptr) || isdigit((int)*bufptr) || *bufptr == '_'))) {
         char *startp; /* point begin of st_name.  */
-        char *endp;   /* end pooint for st_name.  */
-        char *endcol; /* point the ':' for replace of blanks.  */
+        char *endp;   /* end point for st_name.  */
+        const char *endcol; /* point the ':' for replace of blanks.  */
         p = bufptr;
         if (st_class == UNKNOWN) {
             while (isspace(*p))
@@ -1647,11 +1609,11 @@ static int classify_statement()
 
     switch (st_class) {
         case DO:
-            if (fixed_format_flag && exposed_eql) {
+            if (ctx->fixed_format_enabled && exposed_eql) {
                 if (!exposed_comma)
                     goto ret_LET;
             }
-            if (fixed_format_flag) {
+            if (ctx->fixed_format_enabled) {
                 /* when fixed format, it not blank mandatory for DO WHILE. */
                 if (strncmp(bufptr, "while", 5) == 0) {
                     bufptr = p + 5;
@@ -1664,7 +1626,7 @@ static int classify_statement()
         case WHERE: /* check whether ret_LET or WHERE?  */
             /* Caution:  must save plevel and need_keyword.
                special handling for '' */
-            if (fixed_format_flag && exposed_eql) {
+            if (ctx->fixed_format_enabled && exposed_eql) {
                 /* LOGIF such as 'if' '('...')' 'yyy' '=' 'zzz'.  */
                 /* or 'if' '(' ...'('...')'...')')  'yyy' '=' 'zzz'.  */
                 /* fixed_format_flag here, no need skip white space.  */
@@ -1740,7 +1702,7 @@ static int classify_statement()
                             int save_n = need_keyword;
                             int save_p = paren_level;
                             need_keyword = TRUE;
-                            int t = token();
+                            int t = token(yylval);
                             if (t == THEN) { /* then key?  */
                                 need_keyword = FALSE;
                                 bufptr = save; /* it is IFTHEN statement, not
@@ -1817,7 +1779,7 @@ static int classify_statement()
         case SUBROUTINE:
         case VALUE:
         case TARGET:
-            if (fixed_format_flag && exposed_eql) {
+            if (ctx->fixed_format_enabled && exposed_eql) {
                 goto ret_LET;
             }
             break;
@@ -1953,10 +1915,11 @@ static int is_not_keyword()
 
 /* cut keyword from st_buffer */
 /* serch for keyword (BAKA search) */
-static int get_keyword(ks) struct keyword_token *ks;
+static int get_keyword(const struct keyword_token *ks)
 {
-    register char *p, *q;
-    struct keyword_token *kp;
+    register char *p;
+    const char *q;
+    const struct keyword_token *kp;
     char *save;
 
     if (!isalpha((int)*bufptr))
@@ -1964,7 +1927,7 @@ static int get_keyword(ks) struct keyword_token *ks;
 
     save = bufptr;
 
-    if (fixed_format_flag) {
+    if (ctx->fixed_format_enabled) {
         for (kp = ks; kp->k_name; kp++) {
             q = kp->k_name;
             if (*q == '_')
@@ -2012,7 +1975,7 @@ static int get_keyword(ks) struct keyword_token *ks;
     } else {
         int tkn_len;
         char *p;
-        int class, cl;
+        int cls, cl;
         int ret = UNKNOWN;
         /*  'save' is an original point of buffer.
          * If token is unknown then return this.
@@ -2029,7 +1992,7 @@ static int get_keyword(ks) struct keyword_token *ks;
                           *bufptr == '_' || *bufptr == '.';
              p++, bufptr++) {
             tkn_len++;
-            if (tkn_len > max_name_len && is_using_module == FALSE) {
+            if (tkn_len > max_id_name_len() && is_using_module == FALSE) {
                 excess_name_length++;
             }
 
@@ -2052,10 +2015,10 @@ static int get_keyword(ks) struct keyword_token *ks;
         *p = 0; /* termination */
         for (kp = ks; kp->k_name; kp++) {
             if (strcmp(kp->k_name, buffio) == 0) {
-                class = kp->k_token;
-                ret = class;
+            	cls = kp->k_token;
+                ret = cls;
                 if (ks == keywords) {
-                    if ((cl = get_keyword_optional_blank(class)) != UNKNOWN) {
+                    if ((cl = get_keyword_optional_blank(cls)) != UNKNOWN) {
                         ret = cl;
                     }
                 }
@@ -2083,7 +2046,7 @@ static int get_keyword(ks) struct keyword_token *ks;
     }
 }
 
-static int get_keyword_optional_blank(int class)
+static int get_keyword_optional_blank(int cls)
 {
     int cl;
     char *save;
@@ -2092,7 +2055,7 @@ static int get_keyword_optional_blank(int class)
     while (isspace(*bufptr))
         bufptr++; /* skip space */
 
-    switch (class) {
+    switch (cls) {
         case END:
             if ((cl = get_keyword(end_keywords)) != UNKNOWN) {
                 if (cl == BLOCK) {
@@ -2236,34 +2199,37 @@ int checkInsideUse() { return is_using_module; }
  */
 void include_file(char *name, int inside_use)
 {
-    const char *path;
-    FILE *fp;
+    sds_string path = sdsempty();
     struct saved_file_state *p;
 
     if (n_nested_file >= N_NESTED_FILE) {
         error("too nested include file (max = %d)", N_NESTED_FILE);
-        exit(EXITCODE_ERR);
+        FATAL_ERROR();
     }
 
-    path = search_include_path(name);
-
-    if ((fp = fopen(path, "r")) == NULL) {
-        error("cannot open file '%s'", name);
-        exit(EXITCODE_ERR);
+    if (!search_include_path(name, &path)) {
+        error("cannot open file '%s' (%s)", name, path);
+        FATAL_ERROR();
+    }
+    str_stream in;
+    init_str_stream(&in);
+    if(!open_in_file_str_stream(&in, path)) {
+        error("cannot open file '%s' (%s)", name, path);
+        FATAL_ERROR();
     }
 
     assert(fp);
 
     p = &file_state[n_nested_file++];
-    p->save_fp = source_file;
-    p->save_line = current_line;
+    p->save_in_str_strm = ctx->src_input;
+    p->save_line = current_line();
     p->save_pre_read = pre_read;
     p->save_lineno = read_lineno;
     p->is_using_module = is_using_module;
     /* save the context for fixed_format_flag,
      * since we force change in USE.
      */
-    p->save_fixed_format_flag = fixed_format_flag;
+    p->save_fixed_format_flag = ctx->fixed_format_enabled;
     /* save the context for no count up of line number.  */
     p->save_no_countup = no_countup;
 #ifdef ENABLE_UCHARDET
@@ -2287,32 +2253,33 @@ void include_file(char *name, int inside_use)
     }
     bcopy(stn_cols, p->save_stn_cols, 7);
     /* set new state */
-    source_file = fp;
+    ctx->src_input = in;
     if (inside_use) {
         /* in include_file invoked by USE, we must free format.  */
         /* sincse .modf is free format.  */
-        fixed_format_flag = FALSE;
+        ctx->fixed_format_enabled = false;
     } else {
         read_lineno.file_id = get_file_id(name);
         read_lineno.ln_no = 0;
     }
 
     pre_read = 0;
+    sdsfree(path);
 }
 
 static void restore_file()
 {
     struct saved_file_state *p;
 
-    fclose(source_file);
+    release_str_stream(&ctx->src_input);
     p = &file_state[--n_nested_file];
-    assert(p->save_fp);
-    source_file = p->save_fp;
-    current_line = p->save_line;
+    assert(p->save_in_str_strm.handle);
+    ctx->src_input = p->save_in_str_strm;
+    ctx->current_line = p->save_line;
     pre_read = p->save_pre_read;
     read_lineno = p->save_lineno;
     /* anyway restore, it may change in use.  */
-    fixed_format_flag = p->save_fixed_format_flag;
+    ctx->fixed_format_enabled = p->save_fixed_format_flag;
     /* restore the no conputup var. for no need line number count up.  */
     no_countup = p->save_no_countup;
     bcopy(p->save_buffer, line_buffer, LINE_BUF_SIZE);
@@ -2333,7 +2300,7 @@ static void restore_file()
 /*
  * Files name table
  */
-int get_file_id(char *file)
+int get_file_id(const char *file)
 {
     int i;
     for (i = 0; i < n_files; i++) {
@@ -2354,14 +2321,14 @@ static int read_initial_line()
     int ret;
     st_name = NULL;
 
-    if (fixed_format_flag) {
+    if (ctx->fixed_format_enabled) {
         prelast_initial_line_pos = last_offset[1];
         ret = read_fixed_format();
         last_initial_line_pos = last_offset[0];
     } else {
         ret = read_free_format();
         prelast_initial_line_pos = last_initial_line_pos;
-        last_initial_line_pos = ftell(source_file);
+        last_initial_line_pos = ftell(src_input());
     }
     return ret;
 }
@@ -2466,31 +2433,36 @@ static int read_free_format()
     int l;
     int inQuote = FALSE;
     char *bufMax = st_buffer + ST_BUF_SIZE - 1;
-    char oBuf[65536];
+    sds_string oBuf = sdsempty();
+    oBuf = sdsgrowzero(oBuf, 65536);
+    int cont_line_num = 0;
 
-    exposed_comma = 0;
-    exposed_eql = 0;
+    exposed_comma = false;
+    exposed_eql = false;
     paren_level = 0;
     may_generic_spec = FALSE;
 
 again:
     rv = readline_free_format();
     if (rv == ST_EOF)
+    {
+        sdsfree(oBuf);
         return rv;
+    }
     /* for first line, check line number and sentinels */
     p = line_buffer;
 
     st_no = 0;
-    st_OMP_flag = FALSE;       /* flag for "!$OMP" */
-    st_XMP_flag = FALSE;       /* flag for "!$XMP" */
-    st_ACC_flag = FALSE;       /* flag for "!$ACC" */
-    st_PRAGMA_flag = FALSE;    /* flag for "!$+" */
-    st_OCL_flag = FALSE;       /* flag for "!OCL" */
-    st_CONDCOMPL_flag = FALSE; /* flag for "!$" */
-    st_comment_line_flag = FALSE;
-    st_PGI_flag = FALSE;
+    st_OMP_flag = false;       /* flag for "!$OMP" */
+    st_XMP_flag = false;       /* flag for "!$XMP" */
+    st_ACC_flag = false;       /* flag for "!$ACC" */
+    st_PRAGMA_flag = false;    /* flag for "!$+" */
+    st_OCL_flag = false;       /* flag for "!OCL" */
+    st_CONDCOMPL_flag = false; /* flag for "!$" */
+    st_comment_line_flag = false;
+    st_PGI_flag = false;
 
-    if (flag_force_c_comment) {
+    if (force_c_comments_enabled()) {
         if ((p[0] == 'c') || (p[0] == 'C') || (p[0] == '*')) {
             *p = '!';
         }
@@ -2512,48 +2484,48 @@ again:
             if (strcasecmp(sentinel_name(&sentinels, index), OMP_SENTINEL) ==
                 0) {
                 set_pragma_str("OMP");
-                st_OMP_flag = TRUE;
+                st_OMP_flag = true;
             } else if (strcasecmp(sentinel_name(&sentinels, index),
                                   XMP_SENTINEL) == 0) {
                 set_pragma_str("XMP");
-                st_XMP_flag = TRUE;
+                st_XMP_flag = true;
             } else if (strcasecmp(sentinel_name(&sentinels, index),
                                   ACC_SENTINEL) == 0) {
                 set_pragma_str("ACC");
-                st_ACC_flag = TRUE;
+                st_ACC_flag = true;
             } else if (strcasecmp(sentinel_name(&sentinels, index),
                                   OCL_SENTINEL) == 0) {
                 char buff[256] = "ocl";
                 strcat(buff, p);
                 set_pragma_str(buff);
-                st_PRAGMA_flag = TRUE;
+                st_PRAGMA_flag = true;
             } else if (strcasecmp(sentinel_name(&sentinels, index),
                                   CDIR_SENTINEL) == 0) {
                 char buff[256] = "cdir";
                 strcat(buff, p);
                 set_pragma_str(buff);
-                st_PRAGMA_flag = TRUE;
+                st_PRAGMA_flag = true;
             } else if (strcasecmp(sentinel_name(&sentinels, index),
                                   PGI_SENTINEL) == 0) {
                 char buff[256] = "pgi$";
                 strcat(buff, p);
                 set_pragma_str(buff);
-                st_PRAGMA_flag = TRUE;
+                st_PRAGMA_flag = true;
             } else if (strcasecmp(sentinel_name(&sentinels, index),
                                   DIR_SENTINEL) == 0) {
                 char buff[256] = "dir$";
                 strcat(buff, p);
                 set_pragma_str(buff);
-                st_PRAGMA_flag = TRUE;
+                st_PRAGMA_flag = true;
             } else {
                 set_pragma_str(&(sentinel_name(&sentinels, index)[2]));
-                st_PRAGMA_flag = TRUE;
+                st_PRAGMA_flag = true;
             }
         } else if (is_cond_compilation(&sentinels, p)) {
             p += 2; /* length of "!$" */
-            st_CONDCOMPL_flag = TRUE;
+            st_CONDCOMPL_flag = true;
             set_pragma_str("");
-            if (OMP_flag || cond_compile_enabled) {
+            if (openmp_enabled() || conditional_compile_enabled()) {
                 /* get statement label */
                 while (isspace(*p))
                     p++; /* skip space */
@@ -2567,23 +2539,23 @@ again:
                                        "separator required after line number");
                 }
             }
-        } else if (leave_comment_flag) {
+        } else if (leave_comment_enabled()) {
             set_pragma_str(p);
-            st_comment_line_flag = TRUE;
+            st_comment_line_flag = true;
         } else
             goto again; /* comment line */
     }
 
     /* copy body */
-    if (debug_flag) {
+    if (debug_enabled()) {
         debugOutStatement();
     }
 
     /* first line number is set */
-    current_line = new_line_info(read_lineno.file_id, read_lineno.ln_no);
+    ctx->current_line = new_line_info(read_lineno.file_id, read_lineno.ln_no);
 
     q = st_buffer;
-    if ((!OMP_flag && !XMP_flag && !ACC_flag && !cond_compile_enabled) &&
+    if ((!openmp_enabled() && !xmp_enabled() && !openacc_enabled() && !conditional_compile_enabled()) &&
         (st_OMP_flag || st_XMP_flag || st_ACC_flag || st_PRAGMA_flag ||
          st_CONDCOMPL_flag)) {
         /* dumb copy */
@@ -2597,18 +2569,19 @@ again:
         }
     }
 
-    int cont_line_num = 0;
+    cont_line_num = 0;
     while (find_last_ampersand(st_buffer, &st_len)) {
         int index = 0;
-        if (cont_line_num >= max_cont_line) {
+        if (cont_line_num >= max_cont_line()) {
             error("number of continuation lines exceeded %d lines",
-                  max_cont_line);
+                  max_cont_line());
             goto Done;
         }
     next_line:
         rv = readline_free_format();
         if (rv == ST_EOF) {
             error("unexpected EOF");
+            sdsfree(oBuf);
             return rv;
         }
         cont_line_num++;
@@ -2678,7 +2651,7 @@ again:
         }
 
         /* oBuf => st_buffer */
-        if (!OMP_flag && !XMP_flag && !ACC_flag && !cond_compile_enabled &&
+        if (!openmp_enabled() && !xmp_enabled() && !openacc_enabled() && !conditional_compile_enabled() &&
             (st_OMP_flag || st_XMP_flag || st_ACC_flag || st_PRAGMA_flag ||
              st_CONDCOMPL_flag)) {
             /* dumb copy */
@@ -2705,19 +2678,19 @@ again:
     /* done */
 Done:
 
-    if (endlineno_flag)
-        if (current_line->ln_no != read_lineno.ln_no)
-            current_line->end_ln_no = read_lineno.ln_no;
+    if (end_line_no_enabled())
+        if (current_line()->ln_no != read_lineno.ln_no)
+            ctx->current_line->end_ln_no = read_lineno.ln_no;
 
     if (st_OMP_flag || st_XMP_flag || st_ACC_flag || st_CONDCOMPL_flag) {
         append_pragma_str(st_buffer); /* append the rest of line.  */
         goto Last;
     }
 
-    if (inQuote == TRUE) {
+    if (inQuote == true) {
         error("un-closed quotes");
     }
-    if (inH == TRUE) {
+    if (inH == true) {
         warning_lineno(&read_lineno, "un-terminated Hollerith code.");
         if (st_len < ST_BUF_SIZE) {
             *q++ = QUOTE;
@@ -2729,20 +2702,13 @@ Last:
     memcpy(st_buffer_org, st_buffer, st_len);
     st_buffer_org[st_len] = '\0';
 
+    sdsfree(oBuf);
     return ST_ONE;
 }
 
 /* check the module compile? and if reach the end of offset?  */
 static int anotherEOF()
 {
-    extern int mcLn_no;
-    extern long mcEnd;
-
-    if (n_nested_file == 0 && mcLn_no != -1) {
-        long l = ftell(source_file);
-        if (l > mcEnd)
-            return TRUE;
-    }
     return FALSE;
 }
 
@@ -2778,16 +2744,16 @@ next_line0:
     if (!no_countup)
         line_count++;
     no_countup = FALSE;
-    c = getc(source_file);
+    c = getc(src_input());
     if (c == EOF)
         return ST_EOF;
     if (anotherEOF())
         return ST_EOF;
-    ungetc(c, source_file);
+    ungetc(c, src_input());
     /* handling the case string has ';'. */
     /* should handlig for holirith here?  */
     for (bp = line_buffer; bp < &line_buffer[LINE_BUF_SIZE];) {
-        c = getc(source_file);
+        c = getc(src_input());
         if (c == '\r')
             continue;
         if (c == '\n')
@@ -2816,7 +2782,7 @@ next_line0:
         *bp++ = c;
     }
     error("too long line, skipped");
-    while ((c = getc(source_file)) != '\n') {
+    while ((c = getc(src_input())) != '\n') {
         // if(c == EOF) goto unexpected_EOF;
         if (c == EOF)
             break;
@@ -2857,7 +2823,7 @@ done:
                 /* if first line is #line, then set it
                    as original source file name */
                 if (line_count == 1)
-                    source_file_name = strdup(buffio);
+                    set_sds_string(&ctx->src_file_path, buffio);
             }
         } else {
             warning_lineno(&read_lineno, "bad # line");
@@ -2865,9 +2831,9 @@ done:
         }
         goto next_line0;
     }
-    if ((bp - line_buffer) > max_line_len &&
+    if ((bp - line_buffer) > max_line_len() &&
         (!inComment || is_pragma_sentinel(&sentinels, line_buffer, &index)))
-        error("line contains more than %d characters", max_line_len);
+        error("line contains more than %d characters", max_line_len());
 
 #ifdef ENABLE_UCHARDET
     detect_encoding();
@@ -2890,29 +2856,32 @@ static int read_fixed_format()
     int hLen = 0;
     int qChar = '\0';
     char *bufMax = st_buffer + ST_BUF_SIZE - 1;
-    char oBuf[ST_BUF_SIZE];
+    sds_string oBuf = sdsempty();
+    oBuf = sdsgrowzero(oBuf, ST_BUF_SIZE);
     int newLen;
     int lnLen;
     int inQuote = FALSE;
     int current_st_PRAGMA_flag = 0;
     int index; /* sentinel index in list */
+    int cont_line_num = 0;
 
-    exposed_comma = 0;
-    exposed_eql = 0;
+    exposed_comma = false;
+    exposed_eql = false;
     paren_level = 0;
     may_generic_spec = FALSE;
 
-    st_OMP_flag = FALSE;       /* flag for "!$OMP" */
-    st_XMP_flag = FALSE;       /* flag for "!$XMP" */
-    st_ACC_flag = FALSE;       /* flag for "!$ACC" */
-    st_PRAGMA_flag = FALSE;    /* flag for "!$+" */
-    st_CONDCOMPL_flag = FALSE; /* flag for "!$" */
-    st_comment_line_flag = FALSE;
+    st_OMP_flag = false;       /* flag for "!$OMP" */
+    st_XMP_flag = false;       /* flag for "!$XMP" */
+    st_ACC_flag = false;       /* flag for "!$ACC" */
+    st_PRAGMA_flag = false;    /* flag for "!$+" */
+    st_CONDCOMPL_flag = false; /* flag for "!$" */
+    st_comment_line_flag = false;
 
 top:
     if (!pre_read) {
         pre_read = 0;
         if ((rv = readline_fixed_format()) == ST_EOF) {
+            sdsfree(oBuf);
             return ST_EOF;
         }
         if (rv == ST_CONT) {
@@ -2925,60 +2894,60 @@ top:
     st_len = 0;
     if (is_pragma_sentinel(&sentinels, stn_cols, &index)) {
         if (strcasecmp(sentinel_name(&sentinels, index), OMP_SENTINEL) == 0) {
-            st_OMP_flag = TRUE;
+            st_OMP_flag = true;
             set_pragma_str("OMP");
             append_pragma_str(" ");
             append_pragma_str(line_buffer);
             goto copy_body;
         } else if (strcasecmp(sentinel_name(&sentinels, index), XMP_SENTINEL) ==
                    0) {
-            st_XMP_flag = TRUE;
+            st_XMP_flag = true;
             set_pragma_str("XMP");
             append_pragma_str(" ");
             append_pragma_str(line_buffer);
             goto copy_body;
         } else if (strcasecmp(sentinel_name(&sentinels, index), ACC_SENTINEL) ==
                    0) {
-            st_ACC_flag = TRUE;
+            st_ACC_flag = true;
             set_pragma_str("ACC");
             append_pragma_str(" ");
             append_pragma_str(line_buffer);
             goto copy_body;
         } else if (strcasecmp(sentinel_name(&sentinels, index), OCL_SENTINEL) ==
                    0) {
-            st_PRAGMA_flag = TRUE;
-            st_OCL_flag = TRUE;
+            st_PRAGMA_flag = true;
+            st_OCL_flag = true;
             set_pragma_str(&(sentinel_name(&sentinels, index)[1]));
             append_pragma_str(" ");
             append_pragma_str(line_buffer);
             goto copy_body;
         } else if (strcasecmp(sentinel_name(&sentinels, index), PGI_SENTINEL) ==
                    0) {
-            st_PRAGMA_flag = TRUE;
-            st_PGI_flag = TRUE;
+            st_PRAGMA_flag = true;
+            st_PGI_flag = true;
             set_pragma_str(&(sentinel_name(&sentinels, index)[1]));
             append_pragma_str(" ");
             append_pragma_str(line_buffer);
             goto copy_body;
         } else if (strcasecmp(sentinel_name(&sentinels, index), DIR_SENTINEL) ==
                    0) {
-            st_PRAGMA_flag = TRUE;
+            st_PRAGMA_flag = true;
             set_pragma_str(&(sentinel_name(&sentinels, index)[1]));
             append_pragma_str(" ");
             append_pragma_str(line_buffer);
             goto copy_body;
         } else {
-            st_PRAGMA_flag = TRUE;
+            st_PRAGMA_flag = true;
             set_pragma_str(&(sentinel_name(&sentinels, index)[2]));
             append_pragma_str(" ");
             append_pragma_str(line_buffer);
             goto copy_body;
         }
     } else if (is_cond_compilation(&sentinels, stn_cols)) {
-        st_CONDCOMPL_flag = TRUE;
+        st_CONDCOMPL_flag = true;
         set_pragma_str(&(stn_cols[2]));
         append_pragma_str(line_buffer);
-        if (OMP_flag || cond_compile_enabled) {
+        if (openmp_enabled() || conditional_compile_enabled()) {
             memset(stn_cols, ' ', 2);
             /* need check statement label below */
         } else
@@ -2996,7 +2965,7 @@ top:
             if (isdigit((int)*p)) {
                 st_no = 10 * st_no + (*p - '0');
             } else {
-                if ((OMP_flag || cond_compile_enabled) && st_CONDCOMPL_flag) {
+                if ((openmp_enabled() || conditional_compile_enabled()) && st_CONDCOMPL_flag) {
                     /* in case of conditional compilation     */
                     /* stn_cols with errors treated as comment line */
                     pre_read = 0;
@@ -3010,17 +2979,17 @@ top:
     }
 
 copy_body:
-    if (debug_flag) {
+    if (debug_enabled()) {
         debugOutStatement();
     }
 
     /* first line number is set */
-    current_line = new_line_info(read_lineno.file_id, read_lineno.ln_no);
+    ctx->current_line = new_line_info(read_lineno.file_id, read_lineno.ln_no);
 
     /* copy to statement buffer */
     p = line_buffer;
     q = st_buffer;
-    if (!OMP_flag && !XMP_flag && !ACC_flag && !cond_compile_enabled &&
+    if (!openmp_enabled() && !xmp_enabled() && !openacc_enabled() && !conditional_compile_enabled() &&
         (st_OMP_flag || st_XMP_flag || st_ACC_flag || st_PRAGMA_flag ||
          st_CONDCOMPL_flag)) {
         /* dumb copy */
@@ -3038,13 +3007,13 @@ copy_body:
     memcpy(oBuf, st_buffer, newLen);
     oBuf[newLen] = '\0';
 
-    int cont_line_num = 0;
+    cont_line_num = 0;
     current_st_PRAGMA_flag = st_PRAGMA_flag;
     while ((rv = readline_fixed_format()) == ST_CONT) {
         cont_line_num++;
-        if (cont_line_num > max_cont_line) {
+        if (cont_line_num > max_cont_line()) {
             error("number of continuation lines exceeded %d lines",
-                  max_cont_line);
+                  max_cont_line());
         }
         if (is_pragma_sentinel(&sentinels, stn_cols, &index)) {
             if (strcasecmp(sentinel_name(&sentinels, index), OMP_SENTINEL) ==
@@ -3116,7 +3085,7 @@ copy_body:
             }
         }
 
-        if (debug_flag) {
+        if (debug_enabled()) {
             debugOutStatement();
         }
 
@@ -3137,7 +3106,7 @@ copy_body:
             *(p + lnLen) = '\0';
         }
 
-        if ((!OMP_flag && !XMP_flag && !ACC_flag && !cond_compile_enabled) &&
+        if ((!openmp_enabled() && !xmp_enabled() && !openacc_enabled() && !conditional_compile_enabled()) &&
             (st_OMP_flag || st_XMP_flag || st_ACC_flag || st_PRAGMA_flag ||
              st_CONDCOMPL_flag)) {
             /* dumb copy */
@@ -3159,9 +3128,9 @@ copy_body:
         memcpy(oBuf, st_buffer, st_len);
         oBuf[st_len] = '\0';
 
-        if (endlineno_flag)
-            if (current_line->ln_no != read_lineno.ln_no)
-                current_line->end_ln_no = read_lineno.ln_no;
+        if (end_line_no_enabled())
+            if (current_line()->ln_no != read_lineno.ln_no)
+                current_line()->end_ln_no = read_lineno.ln_no;
     }
 
     if (last_char_in_quote_is_quote) {
@@ -3197,6 +3166,7 @@ Last:
     st_buffer_org[st_len] = '\0';
 
     pre_read = (rv == ST_INIT) ? 1 : 0;
+    sdsfree(oBuf);
     return ST_ONE;
 }
 
@@ -3216,13 +3186,14 @@ static int readline_fixed_format()
     int index;         /* sentinel index in list */
     size_t linelen;
     int body_offset = 0;
-    int local_OMP_flag = FALSE;
-    int local_XMP_flag = FALSE;
-    int local_ACC_flag = FALSE;
-    int local_OCL_flag = FALSE;
-    int local_CONDCOMPL_flag = FALSE;
-    int local_SENTINEL_flag = FALSE;
-    int local_PGI_flag = FALSE;
+    bool local_OMP_flag = false;
+    bool local_XMP_flag = false;
+    bool local_ACC_flag = false;
+    bool local_OCL_flag = false;
+    bool local_CONDCOMPL_flag = false;
+    bool local_SENTINEL_flag = false;
+    bool local_PGI_flag = false;
+    int iend;
 
     /* line # counter for each file in cpp.  */
 next_line:
@@ -3231,12 +3202,12 @@ next_line:
 
     /* keep last line offset and line number.  */
     last_offset[1] = last_offset[0];
-    last_offset[0] = ftell(source_file);
+    last_offset[0] = ftell(src_input());
     last_ln_nos[1] = last_ln_nos[0];
     last_ln_no = last_ln_nos[1];
     last_ln_nos[0] = read_lineno.ln_no;
-    if (debug_flag) {
-        fprintf(debug_fp, "readline_fixed_format(): %d/%ld\n", last_ln_nos[0],
+    if (debug_enabled()) {
+        fprintf(debug_output(), "readline_fixed_format(): %d/%ld\n", last_ln_nos[0],
                 last_offset[0]);
     }
 
@@ -3254,12 +3225,12 @@ next_line0:
 
     /* before read, check '!' comment line leaded by " \t\b"
        and pragma sentinel. */
-    starting_pos = ftell(source_file);
+    starting_pos = ftell(src_input());
     if (starting_pos == -1) {
         error("ftell error");
     }
 
-    if (fgets(line_buffer, LINE_BUF_SIZE, source_file) == NULL) {
+    if (fgets(line_buffer, LINE_BUF_SIZE, src_input()) == NULL) {
         /* read error or eof */
         return ST_EOF;
     }
@@ -3277,12 +3248,12 @@ next_line0:
         }
     }
     // for bug #397
-    if (linelen > max_line_len) {
-        _warning_if_doubtfulLongLine(line_buffer, max_line_len);
-        line_buffer[max_line_len] = 0x0a;
-        for (int i = max_line_len + 1; i <= linelen;)
+    if (linelen > max_line_len()) {
+        _warning_if_doubtfulLongLine(line_buffer, max_line_len());
+        line_buffer[max_line_len()] = 0x0a;
+        for (int i = max_line_len() + 1; i <= linelen;)
             line_buffer[i++] = 0x0;
-        linelen = max_line_len;
+        linelen = max_line_len();
     }
 
 #ifdef ENABLE_UCHARDET
@@ -3320,40 +3291,40 @@ next_line0:
         line_buffer[0] = '!'; /* replace for pragma sentinel */
     }
 
-    if (linelen > max_line_len &&
+    if (linelen > max_line_len() &&
         (line_buffer[0] != '!' ||
          is_pragma_sentinel(&sentinels, line_buffer, &index))) {
-        error("line contains more than %d characters", max_line_len);
+        error("line contains more than %d characters", max_line_len());
     }
 
     if (is_pragma_sentinel(&sentinels, line_buffer, &index)) {
-        local_SENTINEL_flag = TRUE;
+        local_SENTINEL_flag = true;
         if (strcasecmp(sentinel_name(&sentinels, index), OMP_SENTINEL) == 0) {
-            local_OMP_flag = TRUE;
+            local_OMP_flag = true;
         } else if (strcasecmp(sentinel_name(&sentinels, index), XMP_SENTINEL) ==
                    0) {
-            local_XMP_flag = TRUE;
+            local_XMP_flag = true;
         } else if (strcasecmp(sentinel_name(&sentinels, index), ACC_SENTINEL) ==
                    0) {
-            local_ACC_flag = TRUE;
+            local_ACC_flag = true;
         } else if (strcasecmp(sentinel_name(&sentinels, index), OCL_SENTINEL) ==
                    0) {
-            local_OCL_flag = TRUE;
+            local_OCL_flag = true;
         } else if (strcasecmp(sentinel_name(&sentinels, index), PGI_SENTINEL) ==
                    0) {
-            local_PGI_flag = TRUE;
+            local_PGI_flag = true;
         }
     } else if (is_cond_compilation(&sentinels, line_buffer)) {
-        local_SENTINEL_flag = TRUE;
-        local_CONDCOMPL_flag = TRUE;
+        local_SENTINEL_flag = true;
+        local_CONDCOMPL_flag = true;
     } else {
         if (line_buffer[0] == '!') {
             /* now '!' on 1st place always means comment line. */
             // skip succeeding characters
-            if (linelen == max_line_len + 1)
-                fseek(source_file, -1, 1);
-            if (linelen > max_line_len)
-                while (fgetc(source_file) != '\n')
+            if (linelen == max_line_len() + 1)
+                fseek(src_input(), -1, 1);
+            if (linelen > max_line_len())
+                while (fgetc(src_input()) != '\n')
                     ;
             goto next_line;
         }
@@ -3409,7 +3380,7 @@ next_line0:
                     /* if first line is #line, then set it
                        as original source file name */
                     if (line_count == 1)
-                        source_file_name = strdup(buffio);
+                        set_sds_string(&ctx->src_file_path, buffio);
                 }
             } else {
                 warning_lineno(&read_lineno, "bad # line");
@@ -3442,7 +3413,7 @@ next_line0:
 read_num_column:
     strcpy(stn_cols, "      ");
     /*                 123456   */
-    int iend = local_OCL_flag ? 5 : 6;
+    iend = local_OCL_flag ? 5 : 6;
     for (i = 0; i < iend; i++) {
         if (line_buffer[i] == '\0') {
             // warning_lineno( &read_lineno, "unexpected eof");
@@ -3477,7 +3448,7 @@ read_num_column:
                 stn_cols[i] = tolower(line_buffer[i]);
         }
     }
-    if (OMP_flag && local_CONDCOMPL_flag) {
+    if (openmp_enabled() && local_CONDCOMPL_flag) {
         check_cont = TRUE;
     }
     body_offset = i;
@@ -3489,20 +3460,20 @@ KeepOnGoin:
      */
     bp = line_buffer;
     inQuote = prevline_is_inQuote;
-    maxChars = max_line_len - 6;
+    maxChars = max_line_len() - 6;
     if (line_buffer[body_offset] == '\n') {
         line_buffer[0] = '\0';
     } else {
-        char scanBuf[4096];
-        int scanLen = 0;
+        char* scan_buf = vector_init(char, linelen);
+        static const int MAX_SCAN_BUF_LEN = 4096;
         /* int getNL = FALSE; */
         /* handle ';' */
         // char c;
         // int i;
 
-        for (i = 0; i < sizeof(scanBuf) && (i + body_offset) < LINE_BUF_SIZE;
+        for (i = 0; i < MAX_SCAN_BUF_LEN && (i + body_offset) < LINE_BUF_SIZE;
              i++) {
-            c = line_buffer[i + body_offset];
+            const char c = line_buffer[i + body_offset];
             if (c == '&' && !inComment && !inQuote) {
                 /* only space and comments are allowed after '&' */
                 only_space_or_comment = TRUE;
@@ -3532,7 +3503,7 @@ KeepOnGoin:
             if (c == '!' && inQuote == 0) {
                 inComment = TRUE;
             } else if (c == ';' && inQuote == 0 && inComment == FALSE) {
-                if (!OMP_flag && (is_cond_compilation(
+                if (!openmp_enabled() && (is_cond_compilation(
                                      &sentinels, stn_cols))) { /* NEED FIX */
                     ; /* a line like 'c$ ... ;' with -no-omp is not
                          enable multi line as ';'.  */
@@ -3541,7 +3512,7 @@ KeepOnGoin:
                        number, and ungetc for \t since next line has
                        neither line number nor continuation. */
                     no_countup = TRUE;
-                    if (fseek(source_file, starting_pos + body_offset + i,
+                    if (fseek(src_input(), starting_pos + body_offset + i,
                               SEEK_SET) != 0) {
                         error("fseek error.");
                     }
@@ -3551,24 +3522,25 @@ KeepOnGoin:
             Newline:
                 /* getNL = TRUE; */
                 inComment = FALSE;
-                scanBuf[i] = '\0';
-                scanLen = i;
+                vector_push_back(scan_buf, '\0');
                 if (i > maxChars) {
                     goto Crip;
                 }
                 break;
             }
-            scanBuf[i] = c;
+            vector_push_back(scan_buf, c);
         }
-        if (i == sizeof(scanBuf)) {
+        if (i == MAX_SCAN_BUF_LEN) {
         Crip:
-            scanBuf[maxChars] = '\0';
-            scanLen = maxChars;
+            vector_push_back(scan_buf, '\0');
         }
 
-        memcpy(line_buffer, scanBuf, scanLen);
-        line_buffer[scanLen] = '\0';
-        bp = line_buffer + scanLen;
+        const size_t scan_len = vector_size(scan_buf);
+
+        memcpy(line_buffer, scan_buf, scan_len);
+        line_buffer[scan_len] = '\0';
+        bp = line_buffer + scan_len;
+        vector_free(scan_buf);
     }
 
     /* skip null line */
@@ -3715,7 +3687,7 @@ int lookup_col2()
     return ret;
 }
 
-static int power10(y) int y;
+static int power10(int y)
 {
     if (y == 0) {
         return 1;
@@ -3732,17 +3704,16 @@ static int power10(y) int y;
 }
 
 typedef struct {
-    char *key;
+    const char *key;
     int len;
 } unHKey;
-static unHKey unHToken[] = {{"integer", 7}, {"real", 4},      {"double", 6},
+static const unHKey unHToken[] = {{"integer", 7}, {"real", 4},      {"double", 6},
                             {"logical", 7}, {"character", 9}, {NULL, 0}};
 
 static int
-    getHollerithLength(head, cur,
-                       inQuote) char *head; /* start pointer of the room. */
-char *cur;   /* current pointer that is pointing 'H'|'h' */
-int inQuote; /* if TRUE, 'H'|'h' is in quote. */
+    getHollerithLength(char *head, /* start pointer of the room. */
+    		char *cur,   /* current pointer that is pointing 'H'|'h' */
+    		int inQuote /* if TRUE, 'H'|'h' is in quote. */)
 {
     int sLen = 0;
     int nTen = 0;
@@ -3867,10 +3838,9 @@ int inQuote; /* if TRUE, 'H'|'h' is in quote. */
     }
 }
 
-static int getEscapeValue(cur, valPtr,
-                          newPtr) char *cur; /* current scan point. */
-int *valPtr;                                 /* return value pointer. */
-char **newPtr;                               /* next scan point return. */
+static int getEscapeValue(char *cur, /* current scan point. */
+		int *valPtr,                                 /* return value pointer. */
+		char **newPtr )                               /* next scan point return. */
 {
     int val = 0;
     if (*cur != '\\') {
@@ -3937,19 +3907,17 @@ char **newPtr;                               /* next scan point return. */
     return TRUE;
 }
 
-static int unHollerith(cur, head, dst, dstHead, dstMax, inQuotePtr, quoteChar,
-                       inHollerithPtr, hollerithLenPtr, newCurPtr,
-                       newDstPtr) char *cur;
-char *head;
-char *dst;
-char *dstHead;
-char *dstMax;
-int *inQuotePtr;
-int quoteChar;
-int *inHollerithPtr;
-int *hollerithLenPtr;
-char **newCurPtr;
-char **newDstPtr;
+static int unHollerith(char *cur,
+		char *head,
+		char *dst,
+		char *dstHead,
+		char *dstMax,
+		int *inQuotePtr,
+		int quoteChar,
+		int *inHollerithPtr,
+		int *hollerithLenPtr,
+		char **newCurPtr,
+		char **newDstPtr)
 {
     int hLen = getHollerithLength(head, cur, *inQuotePtr);
     int nGet = 0;
@@ -4041,13 +4009,12 @@ Done:
     return TRUE;
 }
 
-static int checkInQuote(cur, dst, inQuotePtr, quoteCharPtr, newCurPtr,
-                        newDstPtr) char *cur;
-char *dst;
-int *inQuotePtr;
-int *quoteCharPtr;
-char **newCurPtr;
-char **newDstPtr;
+static int checkInQuote(char *cur,
+		char *dst,
+		int *inQuotePtr,
+		int *quoteCharPtr,
+		char **newCurPtr,
+		char **newDstPtr)
 {
     if (*inQuotePtr == FALSE) {
         *inQuotePtr = TRUE;
@@ -4081,26 +4048,24 @@ char **newDstPtr;
     return TRUE;
 }
 
-int ScanFortranLine(src, srcHead, dst, dstHead, dstMax, inQuotePtr,
-                    quoteCharPtr, inHollerithPtr, hollerithLenPtr, newCurPtr,
-                    newDstPtr) char *src;
-char *srcHead;
-char *dst;
-char *dstHead;
-char *dstMax;
-int *inQuotePtr;
-int *quoteCharPtr;
-int *inHollerithPtr;
-int *hollerithLenPtr;
-char **newCurPtr;
-char **newDstPtr;
+int ScanFortranLine(char *src,
+		char *srcHead,
+		char *dst,
+		char *dstHead,
+		char *dstMax,
+		int *inQuotePtr,
+		int *quoteCharPtr,
+		int *inHollerithPtr,
+		int *hollerithLenPtr,
+		char **newCurPtr,
+		char **newDstPtr)
 {
     char *cpDst = dst;
     char *cur;
 
     while (*src != '\0' && dst <= dstMax) {
         if (isspace((int)*src)) {
-            if (fixed_format_flag && *inQuotePtr == FALSE &&
+            if (ctx->fixed_format_enabled && *inQuotePtr == FALSE &&
                 *inHollerithPtr == FALSE) {
                 src++;
             } else {
@@ -4160,9 +4125,9 @@ char **newDstPtr;
                                   '=') /* || (*(src + 1) == '>') */)
                             ; /* else == ? */
                         else
-                            exposed_eql++; /* = (or maybe =>) */
+                            exposed_eql = true; /* = (or maybe =>) */
                     } else if (*src == ',') {
-                        exposed_comma++;
+                        exposed_comma = true;
                     }
                 }
             }
@@ -4424,7 +4389,7 @@ struct keyword_token do_keywords[] = {
 /*
  * lex for OpenMP part
  */
-static int OMP_lex_token()
+static int OMP_lex_token(YYSTYPE* yylval)
 {
     int t;
     while (isspace(*bufptr))
@@ -4438,10 +4403,10 @@ static int OMP_lex_token()
                 return t;
         }
     }
-    return token();
+    return token(yylval);
 }
 
-struct keyword_token OMP_keywords[] = {{"parallel", OMPKW_PARALLEL},
+const struct keyword_token OMP_keywords[] = {{"parallel", OMPKW_PARALLEL},
                                        {"end", OMPKW_END},
                                        {"task", OMPKW_TASK},
                                        {"private", OMPKW_PRIVATE},
@@ -4493,7 +4458,7 @@ struct keyword_token OMP_keywords[] = {{"parallel", OMPKW_PARALLEL},
 /*
  * lex for XcalableMP part
  */
-static int XMP_lex_token()
+static int XMP_lex_token(YYSTYPE* yylval)
 {
     int t;
     while (isspace(*bufptr))
@@ -4507,7 +4472,7 @@ static int XMP_lex_token()
                 return t;
         }
     }
-    return token();
+    return token(yylval);
 }
 
 /* sentinel list functions */
@@ -4522,14 +4487,13 @@ static void init_sentinel_list(sentinel_list *p)
 }
 
 /* add sentinel name to list */
-static int add_sentinel(sentinel_list *p, char *name)
+static int add_sentinel(sentinel_list *p, const char *name)
 {
     if (p->sentinel_count == MAX_SENTINEL_COUNT)
         return 0;
     if (name == NULL)
         return 0;
-    p->name_list[p->sentinel_count] = malloc(strlen(name) + 1);
-    strcpy(p->name_list[p->sentinel_count], name);
+    p->name_list[p->sentinel_count] = strdup(name);
     p->sentinel_count++;
     return 1;
 }
@@ -4547,7 +4511,7 @@ static char *sentinel_name(sentinel_list *p, unsigned int n)
 }
 
 /* sentinel index by name */
-static int sentinel_index(sentinel_list *p, char *name)
+static int sentinel_index(sentinel_list *p, const char *name)
 {
     int index;
     for (index = 0; index < p->sentinel_count; index++) {
@@ -4627,7 +4591,7 @@ int convert_encoding(void)
 }
 #endif
 
-struct keyword_token XMP_keywords[] = {{"end", XMPKW_END},
+const struct keyword_token XMP_keywords[] = {{"end", XMPKW_END},
                                        {"nodes", XMPKW_NODES},
                                        {"template", XMPKW_TEMPLATE},
                                        {"distribute", XMPKW_DISTRIBUTE},
@@ -4686,7 +4650,7 @@ struct keyword_token XMP_keywords[] = {{"end", XMPKW_END},
 /*
  * lex for OpenACC part
  */
-static int ACC_lex_token()
+static int ACC_lex_token(YYSTYPE* yylval)
 {
     int t;
     while (isspace(*bufptr))
@@ -4700,10 +4664,10 @@ static int ACC_lex_token()
                 return t;
         }
     }
-    return token();
+    return token(yylval);
 }
 
-struct keyword_token ACC_keywords[] = {
+const struct keyword_token ACC_keywords[] = {
     {"end", ACCKW_END},
     {"parallel", ACCKW_PARALLEL},
     {"data", ACCKW_DATA},

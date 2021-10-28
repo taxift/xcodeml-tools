@@ -1,8 +1,9 @@
 #include "xcodeml.h"
+#include "F-front-context.h"
 
-static char *sanitizeText(char *str)
+static const char *sanitizeText(const char *str)
 {
-    char *p = str;
+    const char *p = str;
 
     bool foundNonSpaces = false;
     while (*p != '\0') {
@@ -38,18 +39,18 @@ static bool xcParse(xmlNode *ndPtr, const char *fileName, XcodeMLNode **pnPtr)
 
                 case XML_ELEMENT_NODE: {
                     me = xcodeml_CreateList0(XcodeML_Element);
-                    XCODEML_NAME(me) = strdup((char *)curNode->name);
+                    XCODEML_NAME(me) = strdup((const char*)curNode->name);
                     break;
                 }
 
                 case XML_ATTRIBUTE_NODE: {
                     me = xcodeml_CreateList0(XcodeML_Attribute);
-                    XCODEML_NAME(me) = strdup((char *)curNode->name);
+                    XCODEML_NAME(me) = strdup((const char*)curNode->name);
                     break;
                 }
 
                 case XML_TEXT_NODE: {
-                    char *text = sanitizeText((char *)curNode->content);
+                    const char *text = sanitizeText((const char*)curNode->content);
                     me = xcodeml_CreateValueNode(text);
                     break;
                 }
@@ -119,7 +120,7 @@ static bool xcParse(xmlNode *ndPtr, const char *fileName, XcodeMLNode **pnPtr)
     return ret;
 }
 
-char *xcodeml_GetAttributeValue(XcodeMLNode *ndPtr)
+const char *xcodeml_GetAttributeValue(XcodeMLNode *ndPtr)
 {
     if (XCODEML_TYPE(ndPtr) == XcodeML_Attribute) {
         if (XCODEML_TYPE(XCODEML_ARG1(ndPtr)) == XcodeML_Value) {
@@ -129,7 +130,7 @@ char *xcodeml_GetAttributeValue(XcodeMLNode *ndPtr)
     return "";
 }
 
-char *xcodeml_GetElementValue(XcodeMLNode *ndPtr)
+const char *xcodeml_GetElementValue(XcodeMLNode *ndPtr)
 {
     if (XCODEML_TYPE(ndPtr) == XcodeML_Element) {
         XcodeMLNode *x1;
@@ -148,29 +149,41 @@ char *xcodeml_GetElementValue(XcodeMLNode *ndPtr)
 
 XcodeMLNode *xcodeml_ParseFile(const char *fileName)
 {
+    sds_string buff = sdsempty();
 
-    char buff[MAX_PATH_LEN];
     xmlDocPtr doc;
-    extern char *includeDirv[];
-    extern int includeDirvI;
-    extern char *modincludeDirv;
+    const size_t includeDirvI = vector_size(inc_dir_paths());
+    const size_t modincludeDirvI = vector_size(xmod_inc_dir_paths());
+    char** const includeDirv = (char** const)inc_dir_paths();
+    char** const modincludeDirv = (char** const)xmod_inc_dir_paths();
     int i;
 
     XcodeMLNode *ret = NULL;
     xmlNode *rootNode = NULL;
     bool succeeded = false;
 
-    doc =
-        xmlReadFile(fileName, NULL,
-                    XML_PARSE_NOBLANKS | XML_PARSE_NONET | XML_PARSE_NOWARNING);
+    {
+        void* startAddress = NULL;
+        size_t size = 0;
+
+          if(ctx->files_cache && io_cache_get_input_file_as_mem(ctx->files_cache, fileName, &startAddress, &size))
+        {
+              doc = xmlReadMemory((const char *)startAddress, size, NULL, NULL,
+                              XML_PARSE_NOBLANKS | XML_PARSE_NONET | XML_PARSE_NOWARNING);
+        }
+        else
+        {
+            doc = xmlReadFile(fileName, NULL,
+                                          XML_PARSE_NOBLANKS | XML_PARSE_NONET | XML_PARSE_NOWARNING);
+        }
+    }
 
     if (!doc) {
 
-        if (modincludeDirv) {
-
-            strcpy(buff, modincludeDirv);
-            strcat(buff, "/");
-            strcat(buff, fileName);
+        if (modincludeDirvI > 0) {
+            set_sds_string(&buff, modincludeDirv[0]);
+            buff = sdscat(buff, "/");
+            buff = sdscat(buff, fileName);
 
             doc = xmlReadFile(buff, NULL,
                               XML_PARSE_NOBLANKS | XML_PARSE_NONET |
@@ -181,10 +194,9 @@ XcodeMLNode *xcodeml_ParseFile(const char *fileName)
     if (!doc) {
 
         for (i = 0; i < includeDirvI; i++) {
-
-            strcpy(buff, includeDirv[i]);
-            strcat(buff, "/");
-            strcat(buff, fileName);
+            set_sds_string(&buff, includeDirv[i]);
+            buff = sdscat(buff, "/");
+            buff = sdscat(buff, fileName);
 
             doc = xmlReadFile(buff, NULL,
                               XML_PARSE_NOBLANKS | XML_PARSE_NONET |
@@ -211,6 +223,7 @@ XcodeMLNode *xcodeml_ParseFile(const char *fileName)
     }
 
 Done:
+    sdsfree(buff);
     if (doc != NULL) {
         (void)xmlFreeDoc(doc);
     }
@@ -244,7 +257,7 @@ void xcodeml_DumpTree(FILE *fd, XcodeMLNode *ndPtr, int lvl)
         }
 
         case XcodeML_Element: {
-            char *v = xcodeml_GetElementValue(ndPtr);
+            const char *v = xcodeml_GetElementValue(ndPtr);
             XcodeMLNode *x1;
             XcodeMLList *lp;
 
@@ -267,7 +280,7 @@ void xcodeml_DumpTree(FILE *fd, XcodeMLNode *ndPtr, int lvl)
         }
 
         case XcodeML_Attribute: {
-            char *v = xcodeml_GetAttributeValue(ndPtr);
+            const char *v = xcodeml_GetAttributeValue(ndPtr);
             if (strlen(v) > 0) {
                 fprintf(fd, "PROP (\"%s\" \"%s\")", XCODEML_NAME(ndPtr), v);
             } else {

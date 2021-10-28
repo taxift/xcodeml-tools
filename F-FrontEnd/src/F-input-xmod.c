@@ -4,6 +4,7 @@
 
 #include <libxml/xmlreader.h>
 #include "F-front.h"
+#include "F-front-context.h"
 #include "F-input-xmod.h"
 #include "hash.h"
 
@@ -103,7 +104,7 @@ static TYPE_ENTRY getTypeEntry(HashTable *ht, const char *typeId)
 
     e = FindHashEntry(ht, typeId);
     if (e != NULL) {
-        tep = GetHashValue(e);
+        tep = (TYPE_ENTRY)GetHashValue(e);
     } else {
         tep = XMALLOC(TYPE_ENTRY, sizeof(*tep));
         tp = new_type_desc();
@@ -366,7 +367,7 @@ static int input_type_and_attr(xmlTextReaderPtr reader, HashTable *ht,
             TYPE_PARENT(*tp) = new_ident_desc(NULL);
             TYPE_PARENT_TYPE(*tp) = parent_type;
             e = FindHashEntry(ht, typeId);
-            tep = GetHashValue(e);
+            tep = (TYPE_ENTRY)GetHashValue(e);
             tep->parent_type_id = str;
         } else {
             // Error, but skip
@@ -645,7 +646,7 @@ static int input_FcharacterConstant(xmlTextReaderPtr reader, HashTable *ht,
     }
 
     if (value) {
-        *v = expv_str_term(STRING_CONSTANT, tp, (char *)value);
+        *v = expv_str_term(STRING_CONSTANT, tp, value);
         if (xmlTextReaderRead(reader) != 1)
             return FALSE;
     } else {
@@ -1264,8 +1265,7 @@ static int input_indexRange(xmlTextReaderPtr reader, HashTable *ht,
         return FALSE;
 
     bottom = tp;
-    base = new_type_desc();
-    *base = *bottom;
+    base = clone_type_shallow(bottom);
     TYPE_BASIC_TYPE(bottom) = TYPE_ARRAY;
     TYPE_REF(bottom) = base;
     TYPE_N_DIM(bottom) = TYPE_N_DIM(base) + 1;
@@ -1663,7 +1663,7 @@ static int input_FbasicType(xmlTextReaderPtr reader, HashTable *ht)
     TYPE_ENTRY baseTep;
     TYPE_ENTRY refTep;
     char *typeId = NULL;
-    char *ref;
+    char *ref = NULL;
     int isEmpty;
 
     if (!xmlMatchNode(reader, XML_READER_TYPE_ELEMENT, "FbasicType"))
@@ -2273,22 +2273,22 @@ static int input_typeBoundGenericProcedure(xmlTextReaderPtr reader,
         if (strcmp("WRITE(FORMATTED)", str) == 0) {
             binding_attr_flags |= TYPE_BOUND_PROCEDURE_WRITE;
             binding_attr_flags |= TYPE_BOUND_PROCEDURE_FORMATTED;
-            name = "_write_formatted";
+            name = strdup("_write_formatted");
 
         } else if (strcmp("WRITE(UNFORMATTED)", str) == 0) {
             binding_attr_flags |= TYPE_BOUND_PROCEDURE_WRITE;
             binding_attr_flags |= TYPE_BOUND_PROCEDURE_UNFORMATTED;
-            name = "_write_unformatted";
+            name = strdup("_write_unformatted");
 
         } else if (strcmp("READ(FORMATTED)", str) == 0) {
             binding_attr_flags |= TYPE_BOUND_PROCEDURE_READ;
             binding_attr_flags |= TYPE_BOUND_PROCEDURE_FORMATTED;
-            name = "_read_formatted";
+            name = strdup("_read_formatted");
 
         } else if (strcmp("READ(UNFORMATTED)", str) == 0) {
             binding_attr_flags |= TYPE_BOUND_PROCEDURE_READ;
             binding_attr_flags |= TYPE_BOUND_PROCEDURE_UNFORMATTED;
-            name = "_read_unformatted";
+            name = strdup("_read_unformatted");
         } else {
             return FALSE;
         }
@@ -2830,7 +2830,7 @@ static void update_parent_type(HashTable *ht)
     TYPE_DESC tp;
 
     for (e = FirstHashEntry(ht, &s); e != NULL; e = NextHashEntry(&s)) {
-        tep = GetHashValue(e);
+        tep = (TYPE_ENTRY)GetHashValue(e);
         tp = tep->tp;
         if (TYPE_PARENT(tp) && tep->parent_type_id != NULL) {
             TYPE_ENTRY parent_tep = getTypeEntry(ht, tep->parent_type_id);
@@ -3127,16 +3127,16 @@ static int input_FinterfaceDecl_in_declarations(xmlTextReaderPtr reader,
     if (is_defined_io != NULL) {
         if (strcmp("WRITE(FORMATTED)", is_defined_io) == 0) {
             EXT_PROC_INTERFACE_CLASS(ep) = INTF_GENERIC_WRITE_FORMATTED;
-            name = "_write_formatted";
+            name = strdup("_write_formatted");
         } else if (strcmp("WRITE(UNFORMATTED)", is_defined_io) == 0) {
             EXT_PROC_INTERFACE_CLASS(ep) = INTF_GENERIC_WRITE_UNFORMATTED;
-            name = "_write_unformatted";
+            name = strdup("_write_unformatted");
         } else if (strcmp("READ(FORMATTED)", is_defined_io) == 0) {
             EXT_PROC_INTERFACE_CLASS(ep) = INTF_GENERIC_READ_FORMATTED;
-            name = "_read_formatted";
+            name = strdup("_read_formatted");
         } else if (strcmp("READ(UNFORMATTED)", is_defined_io) == 0) {
             EXT_PROC_INTERFACE_CLASS(ep) = INTF_GENERIC_READ_UNFORMATTED;
-            name = "_read_unformatted";
+            name = strdup("_read_unformatted");
         } else {
             return FALSE;
         }
@@ -3284,6 +3284,30 @@ static int input_FfunctionDecl(xmlTextReaderPtr reader, HashTable *ht,
     return TRUE;
 }
 
+static enum interface_info_class to_interface_info_class(int val)
+{
+    switch(val)
+    {
+    case INTF_ASSIGNMENT: return INTF_ASSIGNMENT;
+    case INTF_OPERATOR: return INTF_OPERATOR;
+    case INTF_USEROP: return INTF_USEROP;
+    case INTF_GENERICS: return INTF_GENERICS;
+    case INTF_GENERIC_FUNC: return INTF_GENERIC_FUNC;
+    case INTF_GENERIC_SUBR: return INTF_GENERIC_SUBR;
+    case INTF_GENERIC_WRITE_FORMATTED: return INTF_GENERIC_WRITE_FORMATTED;
+    case INTF_GENERIC_WRITE_UNFORMATTED: return INTF_GENERIC_WRITE_UNFORMATTED;
+    case INTF_GENERIC_READ_FORMATTED: return INTF_GENERIC_READ_FORMATTED;
+    case INTF_GENERIC_READ_UNFORMATTED: return INTF_GENERIC_READ_UNFORMATTED;
+    case INTF_ABSTRACT: return INTF_ABSTRACT;
+    case INTF_DECL : return INTF_DECL;
+    default:
+        fatal("unexepected value");
+        //Unreachable code
+        return INTF_ASSIGNMENT;
+    };
+
+}
+
 /**
  * input <FinterfaceDecl> node
  */
@@ -3328,10 +3352,10 @@ static int input_FinterfaceDecl(xmlTextReaderPtr reader, HashTable *ht,
 
       id = find_ident_head(find_symbol(name), id_list);
       if (ID_CLASS(id) == CL_TAGNAME) { /* for multi class */
-	id = find_ident_head(ID_SYM(id), ID_NEXT(id));
+    id = find_ident_head(ID_SYM(id), ID_NEXT(id));
       } else if (ID_CLASS(id) == CL_MULTI) {
-	id = multi_find_class(id, CL_PROC);
-	PROC_CLASS(id) = P_UNDEFINEDPROC;
+    id = multi_find_class(id, CL_PROC);
+    PROC_CLASS(id) = P_UNDEFINEDPROC;
       }
 
       interface_class = INTF_GENERICS;
@@ -3345,10 +3369,10 @@ static int input_FinterfaceDecl(xmlTextReaderPtr reader, HashTable *ht,
       
       id = find_ident_head(find_symbol(name), id_list);
       if (ID_CLASS(id) == CL_TAGNAME) { /* for multi class */
-	id = find_ident_head(ID_SYM(id), ID_NEXT(id));
+    id = find_ident_head(ID_SYM(id), ID_NEXT(id));
       } else if (ID_CLASS(id) == CL_MULTI) {
-	id = multi_find_class(id, CL_PROC);
-	PROC_CLASS(id) = P_UNDEFINEDPROC;
+    id = multi_find_class(id, CL_PROC);
+    PROC_CLASS(id) = P_UNDEFINEDPROC;
       }
 
       interface_class = INTF_OPERATOR;
@@ -3361,16 +3385,16 @@ static int input_FinterfaceDecl(xmlTextReaderPtr reader, HashTable *ht,
       
         if (strcmp("WRITE(FORMATTED)", is_defined_io) == 0) {
             interface_class = INTF_GENERIC_WRITE_FORMATTED;
-            name = "_write_formatted";
+            name = strdup("_write_formatted");
         } else if (strcmp("WRITE(UNFORMATTED)", is_defined_io) == 0) {
             interface_class = INTF_GENERIC_WRITE_UNFORMATTED;
-            name = "_write_unformatted";
+            name = strdup("_write_unformatted");
         } else if (strcmp("READ(FORMATTED)", is_defined_io) == 0) {
             interface_class = INTF_GENERIC_READ_FORMATTED;
-            name = "_read_formatted";
+            name = strdup("_read_formatted");
         } else if (strcmp("READ(UNFORMATTED)", is_defined_io) == 0) {
             interface_class = INTF_GENERIC_READ_UNFORMATTED;
-            name = "_read_unformatted";
+            name = strdup("_read_unformatted");
         } else {
             free(is_defined_io);
             return FALSE;
@@ -3391,7 +3415,7 @@ static int input_FinterfaceDecl(xmlTextReaderPtr reader, HashTable *ht,
     ep = PROC_EXT_ID(id);
     EXT_PROC_INTERFACE_INFO(ep) =
         XMALLOC(struct interface_info *, sizeof(struct interface_info));
-    EXT_PROC_INTERFACE_CLASS(ep) = interface_class;
+    EXT_PROC_INTERFACE_CLASS(ep) = to_interface_info_class(interface_class);
     EXT_IS_BLANK_NAME(ep) = FALSE;
     EXT_PROC_CLASS(ep) = EP_INTERFACE;
     EXT_PROC_INTERFACE_CLASS(ep) = INTF_DECL;
@@ -3493,7 +3517,7 @@ static int update_struct_type(HashTable *ht)
     ID mem;
 
     for (e = FirstHashEntry(ht, &s); e != NULL; e = NextHashEntry(&s)) {
-        tep = GetHashValue(e);
+        tep = (TYPE_ENTRY)GetHashValue(e);
         tp = tep->tp;
         if (TYPE_BASIC_TYPE(tp) == TYPE_STRUCT) {
             FOREACH_MEMBER(mem, tp)
@@ -3640,26 +3664,25 @@ static int input_module(xmlTextReaderPtr reader, struct module *mod,
 #define _XMPMOD_LEN 10
 #endif
 
-const char *search_intrinsic_include_path(const char *filename)
+bool search_intrinsic_include_path(const char *filename, sds_string* path)
 {
-    static char path[MAX_PATH_LEN];
-    FILE *fp;
-
-    if (xmoduleIncludeDirv) {
-        strcpy(path, xmoduleIncludeDirv);
+    if (sdslen(intrinsic_xmod_dir_path()) != 0) {
+        set_sds_string(path, intrinsic_xmod_dir_path());
     } else {
-        strcpy(path, DEFAULT_INSTRINSIC_XMODULES_PATH);
+        set_sds_string(path, DEFAULT_INSTRINSIC_XMODULES_PATH);
     }
 
-    strcat(path, "/");
-    strcat(path, filename);
+    *path = sdscat(*path, "/");
+    *path = sdscat(*path, filename);
 
-    if ((fp = fopen(path, "r")) != NULL) {
-        fclose(fp);
-        return path;
+    if(file_exists(*path)) {
+        return true;
+    }
+    else {
+        set_sds_string(path, "");
+        return false;
     }
 
-    return NULL;
 }
 
 /**
@@ -3669,73 +3692,89 @@ int input_intermediate_file(const SYMBOL mod_name, const SYMBOL submod_name,
                             struct module **pmod, const char *extension)
 {
     int ret;
-    char filename[FILE_NAME_LEN];
-    const char *filepath;
+    sds_string filename = sdsempty();
+    sds_string filepath = sdsempty();
     xmlTextReaderPtr reader;
     int is_intrinsic = FALSE;
 
     if (mod_name == NULL || pmod == NULL) {
-        return FALSE;
+        ret = FALSE;
+        goto input_intermediate_file_ret;
     }
 
     /* search for "xxx.xmod" */
-    bzero(filename, sizeof(filename));
     if (!submod_name) {
-        snprintf(filename, sizeof(filename), "%s.%s", SYM_NAME(mod_name),
+        filename = sdscatprintf(filename, "%s.%s", SYM_NAME(mod_name),
                  extension);
     } else {
-        snprintf(filename, sizeof(filename), "%s:%s.%s", SYM_NAME(mod_name),
+        filename = sdscatprintf(filename, "%s:%s.%s", SYM_NAME(mod_name),
                  SYM_NAME(submod_name), extension);
     }
 
-    filepath = search_include_path(filename);
-    reader = xmlNewTextReaderFilename(filepath);
+    {
+        void* startAddress = NULL;
+        size_t size = 0;
+        if(ctx->files_cache && io_cache_get_input_file_as_mem(ctx->files_cache, filename, &startAddress, &size))
+        {
+            reader = xmlReaderForMemory((const char *) startAddress, size, NULL, NULL, 0);
+        }
+        else
+        {
+            search_include_path(filename, &filepath);
+            reader = xmlNewTextReaderFilename(filepath);
+        }
+    }
 
 #if defined(_FC_IS_GFORTRAN) || defined(_FC_IS_FRTPX)
+    sds_string command = sdsempty();
+    sds_string command2 = sdsempty();
+    sds_string filename2 = sdsempty();
+    sds_string filepath2 = sdsempty();
     // if not found, then search for "xxx.mod" and convert it into "xxx.xmod"
     if (reader == NULL) {
 
-        char command2[6 + _XMPMOD_LEN];
-        bzero(command2, 6 + _XMPMOD_LEN);
-        strcpy(command2, "which ");
-        strcat(command2, _XMPMOD_NAME);
+        set_sds_string(&command2, "which ");
+        command2 = sdscat(command2, _XMPMOD_NAME);
         if (system(command2) != 0) {
             warning("No module translator found.");
-            return FALSE;
+            ret = FALSE;
+            goto input_intermediate_file_ret;
         }
 
-        char filename2[FILE_NAME_LEN];
-        const char *filepath2;
 
-        bzero(filename2, sizeof(filename));
-        strcpy(filename2, SYM_NAME(mod_name));
-        strcat(filename2, ".mod");
-        filepath2 = search_include_path(filename2);
+        set_sds_string(&filename2, SYM_NAME(mod_name));
+        filename2 = sdscat(filename2, ".mod");
+        if(!search_include_path(filename2, &filepath2))
+        {
+            ret = FALSE;
+            goto input_intermediate_file_ret;
+        }
 
-        if (!filepath2)
-            return FALSE;
-
-        char command[FILE_NAME_LEN + 9];
-        bzero(command, sizeof(filename2) + 9);
-        strcpy(command, _XMPMOD_NAME);
-        strcat(command, " ");
-        strcat(command, filepath2);
+        set_sds_string(&command, _XMPMOD_NAME);
+        command = sdscat(command, " ");
+        command = sdscat(command, filepath2);
         if (system(command) != 0)
-            return FALSE;
+        {
+            ret = FALSE;
+            goto input_intermediate_file_ret;
+        }
 
-        filepath = search_include_path(filename);
+        search_include_path(filename, &filepath);
         reader = xmlNewTextReaderFilename(filepath);
     }
 #endif
 
     if (reader == NULL) {
-        filepath = search_intrinsic_include_path(filename);
+        search_intrinsic_include_path(filename, &filepath);
         reader = xmlNewTextReaderFilename(filepath);
         is_intrinsic = TRUE;
     }
 
     if (reader == NULL)
-        return FALSE;
+    {
+        ret = FALSE;
+        goto input_intermediate_file_ret;
+    }
 
     *pmod = XMALLOC(struct module *, sizeof(struct module));
     MODULE_NAME(*pmod) = mod_name;
@@ -3745,6 +3784,14 @@ int input_intermediate_file(const SYMBOL mod_name, const SYMBOL submod_name,
     xmlTextReaderClose(reader);
 
     // (*pmod)->filepath = strdup(filepath);
-
+input_intermediate_file_ret:
+#if defined(_FC_IS_GFORTRAN) || defined(_FC_IS_FRTPX)
+    sdsfree(command);
+    sdsfree(command2);
+    sdsfree(filename2);
+    sdsfree(filepath2);
+#endif
+    sdsfree(filename);
+    sdsfree(filepath);
     return ret;
 }

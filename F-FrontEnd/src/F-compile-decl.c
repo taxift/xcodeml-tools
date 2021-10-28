@@ -3,21 +3,22 @@
  */
 
 #include "F-front.h"
+#include "F-front-context.h"
 #include "module-manager.h"
 #include "F-second-pass.h"
 #include <math.h>
+#include "omni_errors.h"
 
 #define ROUND(a, b) (b * ((a + b - 1) / b))
 
 static SYMBOL blank_common_symbol;
 int order_sequence = 0;
 
-static void declare_dummy_args _ANSI_ARGS_((expr l, enum name_class class));
+static void declare_dummy_args _ANSI_ARGS_((expr l, enum name_class cls));
 static int markAsSave _ANSI_ARGS_((ID id));
 
 /* for module and use statement */
 extern char line_buffer[];
-extern SYMBOL current_module_name;
 
 /*
  * FIXME:
@@ -81,52 +82,52 @@ static int conflict_parent_vs_sub_program_unit(ID parent_id)
     if (parent_id == NULL)
         return FALSE;
 
-    if (debug_flag) {
-        fprintf(debug_fp, "checking conflict\n");
+    if (debug_enabled()) {
+        fprintf(debug_output(), "checking conflict\n");
     }
 
     if (ID_CLASS(parent_id) != CL_UNKNOWN) {
-        if (debug_flag)
-            fprintf(debug_fp, "parent_id has explicit class\n");
+        if (debug_enabled())
+            fprintf(debug_output(), "parent_id has explicit class\n");
 
         if (ID_CLASS(parent_id) == CL_PROC && ID_TYPE(parent_id) != NULL) {
             if (IS_VOID(FUNCTION_TYPE_RETURN_TYPE(ID_TYPE(parent_id))) ||
                 FUNCTION_TYPE_HAS_IMPLICIT_RETURN_TYPE(ID_TYPE(parent_id)) ||
                 FUNCTION_TYPE_HAS_UNKNOWN_RETURN_TYPE(ID_TYPE(parent_id))) {
-                if (debug_flag)
-                    fprintf(debug_fp,
+                if (debug_enabled())
+                    fprintf(debug_output(),
                             "parent_id may be used as a function/subroutine\n");
                 /* continue checking */
             } else if (TYPE_IS_MODULE(ID_TYPE(parent_id)) &&
                        !FUNCTION_TYPE_IS_DEFINED(ID_TYPE(parent_id))) {
-                if (debug_flag)
-                    fprintf(debug_fp,
+                if (debug_enabled())
+                    fprintf(debug_output(),
                             "parent_id seems a module function/subroutine\n");
                 return FALSE;
             } else if (PROC_CLASS(parent_id) == P_UNDEFINEDPROC &&
                        IS_PROCEDURE_TYPE(ID_TYPE(parent_id))) {
-                if (debug_flag)
+                if (debug_enabled())
                     fprintf(
-                        debug_fp,
+                        debug_output(),
                         "parent_id seems a undefined function/subroutine\n");
                 return FALSE;
 
             } else {
-                if (debug_flag)
-                    fprintf(debug_fp, "parent_id is an explicit function\n");
+                if (debug_enabled())
+                    fprintf(debug_output(), "parent_id is an explicit function\n");
                 return TRUE;
             }
         } else {
             if (ID_TYPE(parent_id) == NULL ||
                 TYPE_IS_IMPLICIT(ID_TYPE(parent_id))) {
-                if (debug_flag)
+                if (debug_enabled())
                     fprintf(
-                        debug_fp,
+                        debug_output(),
                         "parent_id is used as an implicit declared variable\n");
                 /* continue checking */
             } else {
-                if (debug_flag)
-                    fprintf(debug_fp,
+                if (debug_enabled())
+                    fprintf(debug_output(),
                             "parent_id be used as a non-function/subroutine\n");
                 return TRUE;
             }
@@ -136,8 +137,8 @@ static int conflict_parent_vs_sub_program_unit(ID parent_id)
     if ((ID_TYPE(parent_id) && !TYPE_IS_IMPLICIT(ID_TYPE(parent_id))) &&
         !TYPE_HAS_ACCESSIBILITY_FLAGS(parent_id) &&
         TYPE_HAS_NON_ACCESSIBILITY_FLAGS(parent_id)) {
-        if (debug_flag)
-            fprintf(debug_fp, "parent_id has non-accessibility attribute\n");
+        if (debug_enabled())
+            fprintf(debug_output(), "parent_id has non-accessibility attribute\n");
         return TRUE;
     }
 
@@ -147,27 +148,27 @@ static int conflict_parent_vs_sub_program_unit(ID parent_id)
         if (!TYPE_IS_IMPLICIT(ID_TYPE(parent_id)) &&
             !TYPE_HAS_ACCESSIBILITY_FLAGS(parent_id) &&
             TYPE_HAS_NON_ACCESSIBILITY_FLAGS(parent_id)) {
-            if (debug_flag)
-                fprintf(debug_fp,
+            if (debug_enabled())
+                fprintf(debug_output(),
                         "parent_id has non-accessibility attribute\n");
             return TRUE;
         }
 
         if (ID_TYPE(parent_id) && TYPE_IS_SAVE(ID_TYPE(parent_id))) {
-            if (debug_flag)
-                fprintf(debug_fp,
+            if (debug_enabled())
+                fprintf(debug_output(),
                         "parent_id has non-accessibility attribute\n");
             error("SAVE attirubte conflicts to the procedure");
             return TRUE;
         }
 
         if (IS_SUBR(ID_TYPE(parent_id))) {
-            if (debug_flag)
-                fprintf(debug_fp, "parent_id seems a subroutine\n");
+            if (debug_enabled())
+                fprintf(debug_output(), "parent_id seems a subroutine\n");
             if (ID_TYPE(parent_id) && !TYPE_IS_IMPLICIT(ID_TYPE(parent_id)) &&
                 TYPE_HAS_NON_ACCESSIBILITY_FLAGS(parent_id)) {
-                if (debug_flag)
-                    fprintf(debug_fp,
+                if (debug_enabled())
+                    fprintf(debug_output(),
                             "parent_id seems an external subroutine\n");
                 return TRUE;
             }
@@ -175,16 +176,16 @@ static int conflict_parent_vs_sub_program_unit(ID parent_id)
         } else if (IS_FUNCTION_TYPE(ID_TYPE(parent_id))) {
             TYPE_DESC return_type =
                 FUNCTION_TYPE_RETURN_TYPE(ID_TYPE(parent_id));
-            if (debug_flag)
-                fprintf(debug_fp, "parent_id seems a function\n");
+            if (debug_enabled())
+                fprintf(debug_output(), "parent_id seems a function\n");
             if (return_type != NULL && !TYPE_IS_IMPLICIT(return_type) &&
                 TYPE_BASIC_TYPE(return_type) != TYPE_UNKNOWN) {
-                if (debug_flag)
-                    fprintf(debug_fp, "ID_TYPE(parent_id) has explicit type\n");
+                if (debug_enabled())
+                    fprintf(debug_output(), "ID_TYPE(parent_id) has explicit type\n");
                 if (!TYPE_HAS_ACCESSIBILITY_FLAGS(parent_id) &&
                     !TYPE_HAS_ACCESSIBILITY_FLAGS(ID_TYPE(parent_id))) {
-                    if (debug_flag)
-                        fprintf(debug_fp,
+                    if (debug_enabled())
+                        fprintf(debug_output(),
                                 "parent_id and ID_TYPE(parent_id) don't have "
                                 "accessibility attributes\n");
                     return TRUE;
@@ -192,20 +193,20 @@ static int conflict_parent_vs_sub_program_unit(ID parent_id)
             }
 
         } else if (ID_IS_DECLARED(parent_id)) {
-            if (debug_flag)
-                fprintf(debug_fp, "parent_id seems like to be not declared\n");
+            if (debug_enabled())
+                fprintf(debug_output(), "parent_id seems like to be not declared\n");
 
         } else {
-            if (debug_flag)
-                fprintf(debug_fp, "parent_id seems like a variable\n");
+            if (debug_enabled())
+                fprintf(debug_output(), "parent_id seems like a variable\n");
             if (!TYPE_IS_IMPLICIT(ID_TYPE(parent_id)) &&
                 TYPE_BASIC_TYPE(ID_TYPE(parent_id)) != TYPE_UNKNOWN) {
-                if (debug_flag)
-                    fprintf(debug_fp, "ID_TYPE(parent_id) has explicit type\n");
+                if (debug_enabled())
+                    fprintf(debug_output(), "ID_TYPE(parent_id) has explicit type\n");
                 if (!TYPE_HAS_ACCESSIBILITY_FLAGS(parent_id) &&
                     !TYPE_HAS_ACCESSIBILITY_FLAGS(ID_TYPE(parent_id))) {
-                    if (debug_flag)
-                        fprintf(debug_fp,
+                    if (debug_enabled())
+                        fprintf(debug_output(),
                                 "parent_id and ID_TYPE(parent_id) don't have "
                                 "accessibility attributes\n");
                     return TRUE;
@@ -214,8 +215,8 @@ static int conflict_parent_vs_sub_program_unit(ID parent_id)
         }
     }
 
-    if (debug_flag)
-        fprintf(debug_fp, "NOT conflict\n");
+    if (debug_enabled())
+        fprintf(debug_output(), "NOT conflict\n");
 
     return FALSE;
 }
@@ -303,7 +304,7 @@ static void link_parent_defined_by(ID id)
 /*
  * define main program or block data, subroutine, functions
  */
-void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
+void declare_procedure(enum name_class cls, expr name, TYPE_DESC type,
                        expr args, expr prefix_spec, expr result_opt,
                        expr bind_opt)
 {
@@ -320,7 +321,7 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
 
     if (name) {
         if (EXPR_CODE(name) != IDENT)
-            abort();
+            FATAL_ERROR();
         s = EXPR_SYM(name);
     }
 
@@ -335,8 +336,8 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
         error("%s returns ABSTRACT TYPE", s ? SYM_NAME(s) : "function");
     }
 
-    if (class != CL_ENTRY) {
-        CURRENT_PROC_CLASS = class;
+    if (cls != CL_ENTRY) {
+        CURRENT_PROC_CLASS = cls;
         if (name) {
             CURRENT_PROC_NAME = s;
             ep = find_ext_id_parent(CURRENT_PROC_NAME);
@@ -362,7 +363,7 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
     FOR_ITEMS_IN_LIST (lp, prefix_spec) {
         switch (EXPR_CODE(LIST_ITEM(lp))) {
             case F95_RECURSIVE_SPEC:
-                if (class != CL_PROC) {
+                if (cls != CL_PROC) {
                     error("invalid recursive prefix");
                     return;
                 }
@@ -370,7 +371,7 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
                 break;
 
             case F95_PURE_SPEC:
-                if (class != CL_PROC) {
+                if (cls != CL_PROC) {
                     error("invalid pure prefix");
                     return;
                 }
@@ -378,7 +379,7 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
                 break;
 
             case F95_ELEMENTAL_SPEC:
-                if (class != CL_PROC) {
+                if (cls != CL_PROC) {
                     error("invalid elemental prefix");
                     return;
                 }
@@ -386,7 +387,7 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
                 break;
 
             case F08_MODULE_SPEC:
-                if (class != CL_PROC) {
+                if (cls != CL_PROC) {
                     error("invalid module prefix");
                     return;
                 }
@@ -394,7 +395,7 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
                 break;
 
             case F08_IMPURE_SPEC:
-                if (class != CL_PROC) {
+                if (cls != CL_PROC) {
                     error("invalid pure prefix");
                     return;
                 }
@@ -406,11 +407,11 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
         }
     }
 
-    switch (class) {
+    switch (cls) {
 
         case CL_MAIN:
-            if (debug_flag)
-                fprintf(diag_file, "  MAIN %s:\n", (name ? SYM_NAME(s) : ""));
+            if (debug_enabled())
+                fprintf(diag_output(), "  MAIN %s:\n", (name ? SYM_NAME(s) : ""));
 
             // Delete line because of [Xmp-dev:1896]
             // CURRENT_EXT_ID = declare_external_id(find_symbol(
@@ -426,8 +427,8 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
             break;
 
         case CL_BLOCK:
-            if (debug_flag)
-                fprintf(diag_file, "  BLOCK DATA %s:\n",
+            if (debug_enabled())
+                fprintf(diag_output(), "  BLOCK DATA %s:\n",
                         name ? SYM_NAME(s) : "");
             CURRENT_EXT_ID = declare_external_id(
                 find_symbol(name ? SYM_NAME(s) : "no__name__blkdata__"),
@@ -444,8 +445,8 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
             break;
 
         case CL_PROC: { /* subroutine or functions */
-            if (debug_flag)
-                fprintf(diag_file, "   %s:\n", SYM_NAME(s));
+            if (debug_enabled())
+                fprintf(diag_output(), "   %s:\n", SYM_NAME(s));
 
             if (unit_ctl_level > 0 && PARENT_STATE == ININTR) {
                 ID pid = find_ident_outer_scope(s);
@@ -579,8 +580,8 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
             TYPE_DESC tp = NULL;
             list lp;
 
-            if (debug_flag)
-                fprintf(diag_file, "   entry %s:\n", SYM_NAME(s));
+            if (debug_enabled())
+                fprintf(diag_output(), "   entry %s:\n", SYM_NAME(s));
 
             id = declare_ident(s, CL_ENTRY);
             if (IS_SUBR(ID_TYPE(CURRENT_PROCEDURE))) {
@@ -598,12 +599,9 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
                 /*
                  * Copy the type of the current procedure.
                  */
-                tp = new_type_desc();
-                *tp = *type;
+                tp = clone_type_shallow(type);
                 TYPE_ATTR_FLAGS(tp) = 0;
-                FUNCTION_TYPE_RETURN_TYPE(tp) = new_type_desc();
-                *FUNCTION_TYPE_RETURN_TYPE(tp) =
-                    *FUNCTION_TYPE_RETURN_TYPE(type);
+                FUNCTION_TYPE_RETURN_TYPE(tp) = clone_type_shallow(FUNCTION_TYPE_RETURN_TYPE(type));
             }
             declare_id_type(id, tp);
 
@@ -632,7 +630,7 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
                     }
                     if (ID_TYPE(arg) == NULL) {
                         error("'%s' has no implicit type.", SYM_NAME(s));
-                        abort();
+                        FATAL_ERROR();
                     }
                 }
             }
@@ -678,15 +676,13 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
 
         case CL_SUBMODULE: /* submodule */ /* fall through */
         case CL_MODULE: /* modules */ {
-            extern int mcLn_no;
-            current_module_name = s;
+            ctx->current_module_name = s;
             /* should print in module compile mode.  */
-            if (mcLn_no == -1)
-                if (debug_flag)
-                    fprintf(diag_file, "   %s %s:\n",
-                            class == CL_MODULE ? "module" : "submodule",
-                            SYM_NAME(current_module_name));
-            id = declare_ident(s, class);
+            if (debug_enabled())
+                fprintf(diag_output(), "   %s %s:\n",
+                        cls == CL_MODULE ? "module" : "submodule",
+                        SYM_NAME(current_module_name()));
+            id = declare_ident(s, cls);
             declare_id_type(id, type);
             ID_LINE(id) = EXPR_LINE(name); /* set line_no */
             ID_STORAGE(id) = STG_EXT;
@@ -713,9 +709,9 @@ void declare_procedure(enum name_class class, expr name, TYPE_DESC type,
             arg_len++;
         }
 
-        if (class != CL_PROC) {
+        if (cls != CL_PROC) {
             error("unexpected statement in interface block");
-            abort();
+            FATAL_ERROR();
         }
 
         interface = CURRENT_INTERFACE;
@@ -795,7 +791,7 @@ declare_current_procedure_ext_id()
     return ep;
 }
 
-static void declare_dummy_args(expr l, enum name_class class)
+static void declare_dummy_args(expr l, enum name_class cls)
 {
     list lp;
     expr x;
@@ -814,7 +810,7 @@ static void declare_dummy_args(expr l, enum name_class class)
             ID_STORAGE(id) = STG_ARG;
         } else if (ID_STORAGE(id) != STG_ARG) {
             if (ID_STORAGE(id) == STG_AUTO && IS_ARRAY_TYPE(ID_TYPE(id)) &&
-                (!TYPE_IS_POINTER(ID_TYPE(id))) && class == CL_ENTRY &&
+                (!TYPE_IS_POINTER(ID_TYPE(id))) && cls == CL_ENTRY &&
                 is_array_size_adjustable(ID_TYPE(id))) {
                 /*
                  * Local adjustable array is about to be used as a
@@ -825,19 +821,11 @@ static void declare_dummy_args(expr l, enum name_class class)
                               "be used as a dummy argument for an "
                               "ENTRY statement, not supported yet.",
                               ID_NAME(id));
-            } else if (class != CL_ENTRY) {
+            } else if (cls != CL_ENTRY) {
                 error_at_node(l, "illegal dummy argument '%s'", SYM_NAME(s));
             }
         }
     }
-}
-
-TYPE_DESC
-copy_type_shallow(TYPE_DESC tp)
-{
-    TYPE_DESC ret = new_type_desc();
-    *ret = *tp;
-    return ret;
 }
 
 static void copy_parent_type(ID id)
@@ -916,7 +904,7 @@ void implicit_declaration(ID id)
                 /* FEAST delete start */
                 /* error("attempt to use undefined type variable, %s",
                  * ID_NAME(id)); */
-                sp_link_id(id, SP_ERR_UNDEF_TYPE_VAR, current_line);
+                sp_link_id(id, SP_ERR_UNDEF_TYPE_VAR, current_line());
                 /* FEAST delete  end  */
                 return;
             } else
@@ -984,7 +972,7 @@ ID declare_variable(ID id)
                 (!TYPE_IS_ALLOCATABLE(ID_TYPE(id))) && isSubprogram == FALSE &&
                 is_array_size_adjustable(ID_TYPE(id)) &&
                 !is_array_implicit_shape(ID_TYPE(id)) &&
-                !XMP_flag) { // For XMP, local adjustable array seems to be
+                !xmp_enabled()) { // For XMP, local adjustable array seems to be
                              // supported, because of LOCAL_ALIAS.
                 error("'%s' looks like a local adjustable array, "
                       "not supported yet.",
@@ -1204,8 +1192,7 @@ ID declare_function(ID id)
     return id;
 }
 
-void declare_statement_function(id, args, body) ID id;
-expr args, body;
+void declare_statement_function(ID id, expr args, expr body)
 {
     ID ip;
     list lp;
@@ -1277,7 +1264,6 @@ ID find_label_from_block(int st_no, BLOCK_ENV block)
 ID declare_label(int st_no, LABEL_TYPE type, int def_flag)
 {
     ID ip, last_ip;
-    char name[10];
     CTL cp;
     int in_block = FALSE;
     int not_same_block = FALSE;
@@ -1327,8 +1313,11 @@ ID declare_label(int st_no, LABEL_TYPE type, int def_flag)
     }
 
     /* if not found, make label entry */
-    sprintf(name, "%05d", st_no);
-    ip = new_ident_desc(find_symbol(name));
+    {
+        char name[20];
+        sprintf(name, "%05d", st_no);
+        ip = new_ident_desc(find_symbol(name));
+    }
     ID_LINK_ADD(ip, LOCAL_LABELS, last_ip);
 
     ID_ADDR(ip) = expv_sym_term(IDENT, NULL, ID_SYM(ip));
@@ -1466,7 +1455,7 @@ declare_external_id(SYMBOL s, enum storage_class tag, int def_flag)
     return ep;
 }
 
-ID declare_ident(SYMBOL s, enum name_class class)
+ID declare_ident(SYMBOL s, enum name_class cls)
 {
     ID ip, last_ip;
     ID predecl_ip = NULL;
@@ -1486,7 +1475,7 @@ ID declare_ident(SYMBOL s, enum name_class class)
     if (is_in_struct_member_initializer_compilation_flag_for_declare_ident ==
         FALSE) {
         if (CTL_TYPE(ctl_top) == CTL_STRUCT) {
-            if (class == CL_TAGNAME) {
+            if (cls == CL_TAGNAME) {
                 isPreDecl = TRUE;
             } else
                 /*
@@ -1497,15 +1486,15 @@ ID declare_ident(SYMBOL s, enum name_class class)
                 TYPE_DESC struct_tp = CTL_STRUCT_TYPEDESC(ctl_top);
                 if (CURRENT_STATE == IN_TYPE_PARAM_DECL) {
                     symbols = &TYPE_TYPE_PARAMS(struct_tp);
-                    class = CL_TYPE_PARAM;
+                    cls = CL_TYPE_PARAM;
                 } else if (CURRENT_STATE == IN_TYPE_BOUND_PROCS) {
                     isInternalPrivate = TYPE_IS_INTERNAL_PRIVATE(struct_tp);
                     symbols = &TYPE_MEMBER_LIST(struct_tp);
-                    class = CL_TYPE_BOUND_PROC;
+                    cls = CL_TYPE_BOUND_PROC;
                 } else {
                     isInternalPrivate = TYPE_IS_INTERNAL_PRIVATE(struct_tp);
                     symbols = &TYPE_MEMBER_LIST(struct_tp);
-                    class = CL_ELEMENT;
+                    cls = CL_ELEMENT;
                 }
             }
         }
@@ -1514,9 +1503,9 @@ ID declare_ident(SYMBOL s, enum name_class class)
     last_ip = NULL;
     FOREACH_ID (ip, *symbols) {
         if (ID_SYM(ip) == s) {
-            /* if argument 'class' is CL_UNKNOWN, find id */
-            if (ID_CLASS(ip) == class) {
-                if (class == CL_TAGNAME) {
+            /* if argument 'cls' is CL_UNKNOWN, find id */
+            if (ID_CLASS(ip) == cls) {
+                if (cls == CL_TAGNAME) {
                     if (TYPE_IS_DECLARED(ID_TYPE(ip)) == FALSE) {
                         predecl_ip = ip;
                         continue;
@@ -1541,12 +1530,12 @@ ID declare_ident(SYMBOL s, enum name_class class)
                 }
                 return ip;
             }
-            if (ID_CLASS(ip) == CL_PROC && class == CL_VAR) {
+            if (ID_CLASS(ip) == CL_PROC && cls == CL_VAR) {
                 return ip;
             }
 
             if (ID_CLASS(ip) == CL_MULTI &&
-                (class == CL_TAGNAME || class == CL_PROC)) {
+                (cls == CL_TAGNAME || cls == CL_PROC)) {
                 symbols = &MULTI_ID_LIST(ip);
                 FOREACH_ID (ip, *symbols) {
                     last_ip = ip;
@@ -1554,13 +1543,13 @@ ID declare_ident(SYMBOL s, enum name_class class)
                 break;
             }
 
-            if (class == CL_UNKNOWN) {
+            if (cls == CL_UNKNOWN) {
                 return ip;
             }
 
             /* define name class */
             if (ID_CLASS(ip) == CL_UNKNOWN) {
-                ID_CLASS(ip) = class;
+                ID_CLASS(ip) = cls;
             } else if (!(ID_IS_DUMMY_ARG(ip))) {
                 snprintf(msg, 2048, fmt, "name", SYM_NAME(s));
                 if (isInUseDecl == FALSE) {
@@ -1590,7 +1579,7 @@ ID declare_ident(SYMBOL s, enum name_class class)
         ip = new_ident_desc(s);
         ID_LINK_ADD(ip, *symbols, last_ip);
         ID_SYM(ip) = s;
-        ID_CLASS(ip) = class;
+        ID_CLASS(ip) = cls;
         if (isPreDecl == FALSE)
             ID_ORDER(ip) = order_sequence++;
         if (isInternalPrivate) {
@@ -1598,7 +1587,7 @@ ID declare_ident(SYMBOL s, enum name_class class)
         }
     }
 
-    switch (class) {
+    switch (cls) {
         case CL_TAGNAME:
             ID_STORAGE(ip) = STG_TAGNAME;
             break;
@@ -2059,8 +2048,8 @@ static TYPE_DESC declare_type_attributes(ID id, TYPE_DESC tp, expr attributes,
             }
         }
 
-        if (debug_flag)
-            fprintf(debug_fp, "<!-- %s -->\n", EXPR_CODE_NAME(EXPR_CODE(v)));
+        if (debug_enabled())
+            fprintf(debug_output(), "<!-- %s -->\n", EXPR_CODE_NAME(EXPR_CODE(v)));
 
         switch (EXPR_CODE(v)) {
             case F95_PARAMETER_SPEC:
@@ -2077,6 +2066,7 @@ static TYPE_DESC declare_type_attributes(ID id, TYPE_DESC tp, expr attributes,
                 }
                 break;
             case XMP_CODIMENSION_SPEC:
+            {
                 if (ignoreDims)
                     break;
                 /* if (is_descendant_coindexed(tp)){ */
@@ -2096,6 +2086,7 @@ static TYPE_DESC declare_type_attributes(ID id, TYPE_DESC tp, expr attributes,
                     return NULL;
                 }
                 break;
+            }
             case F95_EXTERNAL_SPEC:
                 /* see compile_EXTERNAL_decl() */
                 TYPE_SET_EXTERNAL(tp);
@@ -2916,7 +2907,7 @@ expv expv_reduce_kind(expv v)
 
     switch (EXPV_CODE(ret)) {
         case FUNCTION_CALL: {
-            char *name = NULL;
+            const char *name = NULL;
             SYMBOL s = EXPV_NAME(EXPR_ARG1(ret));
             ID fId = find_ident(s);
 
@@ -3126,7 +3117,7 @@ max_type(TYPE_DESC tp1, TYPE_DESC tp2)
         default:
             if (t == TYPE_BASIC_TYPE(tp2))
                 return (tp2);
-            abort();
+            FATAL_ERROR();
     }
     return NULL;
 }
@@ -4173,8 +4164,8 @@ void compile_struct_decl_end()
 
     check_type_parameters_declared(ctl_top);
 
-    if (endlineno_flag)
-        EXPR_END_LINE_NO(CTL_BLOCK(ctl_top)) = current_line->ln_no;
+    if (end_line_no_enabled())
+        EXPR_END_LINE_NO(CTL_BLOCK(ctl_top)) = current_line()->ln_no;
 
     stp = EXPV_TYPE(CTL_BLOCK(ctl_top));
 
@@ -4465,7 +4456,7 @@ void fix_array_dimensions(TYPE_DESC tp)
             if (upper == NULL) {
                 error("internal compiler error on fix_array_dimensions(): "
                       "assertion fail on upper as NULL.");
-                exit(1);
+                FATAL_ERROR();
             }
 
             if (lower == NULL)
@@ -4815,7 +4806,7 @@ void compile_INTRINSIC_decl(expr id_list)
     }
 }
 
-static int markAsSave(id) ID id;
+static int markAsSave(ID id)
 {
     if (ID_CLASS(id) == CL_PARAM) {
         return TRUE;
@@ -4840,7 +4831,7 @@ static int markAsSave(id) ID id;
 }
 
 /* declare save variable */
-void compile_SAVE_decl(id_list) expr id_list;
+void compile_SAVE_decl(expr id_list)
 {
     list lp;
     expr ident;
@@ -5248,7 +5239,7 @@ static TYPE_DESC type_apply_type_parameter0(TYPE_DESC tp, ID type_params)
     } else if (TYPE_KIND(tp)) {
         v = expv_apply_type_parameter(TYPE_KIND(tp), type_params);
         if (v != TYPE_KIND(tp)) {
-            tp = copy_type_shallow(tp);
+            tp = clone_type_shallow(tp);
             TYPE_KIND(tp) = v;
             while (TYPE_REF(tp) && TYPE_KIND(TYPE_REF(tp))) {
                 TYPE_REF(tp) = TYPE_REF(TYPE_REF(tp));
@@ -5258,7 +5249,7 @@ static TYPE_DESC type_apply_type_parameter0(TYPE_DESC tp, ID type_params)
     } else if (TYPE_LENG(tp)) {
         v = expv_apply_type_parameter(TYPE_LENG(tp), type_params);
         if (v != TYPE_LENG(tp)) {
-            tp = copy_type_shallow(tp);
+            tp = clone_type_shallow(tp);
             TYPE_LENG(tp) = v;
             while (TYPE_REF(tp) && TYPE_KIND(TYPE_REF(tp))) {
                 TYPE_REF(tp) = TYPE_REF(TYPE_REF(tp));
@@ -5268,7 +5259,7 @@ static TYPE_DESC type_apply_type_parameter0(TYPE_DESC tp, ID type_params)
     } else if (TYPE_REF(tp)) {
         tq = type_apply_type_parameter0(TYPE_REF(tp), type_params);
         if (tq != TYPE_REF(tp)) {
-            tp = copy_type_shallow(tp);
+            tp = clone_type_shallow(tp);
             TYPE_REF(tp) = tq;
         }
     }
@@ -5321,7 +5312,7 @@ type_apply_type_parameter(TYPE_DESC tp, expv type_param_values)
 
     type_param_values = compiled_type_param_values;
 
-    tq = copy_type_shallow(tp);
+    tq = clone_type_shallow(tp);
 
     if (TYPE_PARENT(tq)) {
         /*

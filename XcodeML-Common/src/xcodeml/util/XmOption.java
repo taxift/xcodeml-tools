@@ -5,7 +5,9 @@ import xcodeml.util.XmLanguage;
 
 /**
  * Decompile option.
+// * @deprecated Not thread-safe.
  */
+// @Deprecated  // avoid warning
 public class XmOption
 {
     public static final int COMP_VENDOR_GNU = 'G';
@@ -59,6 +61,10 @@ public class XmOption
     private static boolean _coarrayUseStatement = false;
     private static ArrayList<String> _coarrayEntryNames = new ArrayList<>();
 
+    private static int _pointer_scalar_size = 8;  // This value for gcc-8.3.0
+    private static int _pointer_array_size  = 40; // This value for gcc-8.3.0
+    private static int _pointer_diff_size   = 24; // This value for gcc-8.3.0
+  
     private XmOption()
     {
     }
@@ -405,4 +411,33 @@ public class XmOption
         return _addPar;
     }
 
+    public static void setPointerScalarSize(int value)
+    {
+	    _pointer_scalar_size = value;
+    }
+
+    public static int getPointerScalarSize()
+    {
+	    return _pointer_scalar_size;
+    }
+  
+    public static void setPointerArraySize(int value)
+    {
+  	    _pointer_array_size = value;
+    }
+
+    public static int getPointerArraySize()
+    {
+  	    return _pointer_array_size;
+	}
+  
+    public static void setPointerDiffSize(int value)
+    {
+	    _pointer_diff_size = value;
+    }
+
+    public static int getPointerDiffSize()
+    {
+     	return _pointer_diff_size;
+    }
 }

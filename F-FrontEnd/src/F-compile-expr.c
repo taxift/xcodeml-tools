@@ -3,8 +3,10 @@
  */
 
 #include "F-front.h"
+#include "F-front-context.h"
 #include "F-second-pass.h"
 #include "F-second-pass.h"
+#include "omni_errors.h"
 #include <math.h>
 
 static expv compile_data_args _ANSI_ARGS_((expr args));
@@ -24,7 +26,7 @@ static TYPE_DESC getLargeIntType();
 /*
  * Convert expr terminal node to expv terminal node.
  */
-expv compile_terminal_node(x) expr x;
+expv compile_terminal_node(expr x)
 {
     expv ret = NULL;
 
@@ -162,7 +164,7 @@ expv compile_terminal_node(x) expr x;
 }
 
 TYPE_DESC
-bottom_type(type) const TYPE_DESC type;
+bottom_type(const TYPE_DESC type)
 {
     TYPE_DESC tp = type;
 
@@ -356,7 +358,7 @@ expv compile_expression(expr x)
     expv v1, v2;
     SYMBOL s;
     int is_userdefined = FALSE;
-    char *error_msg = NULL;
+    const char *error_msg = NULL;
     int type_is_not_fixed = FALSE;
 
     if (x == NULL) {
@@ -914,8 +916,7 @@ expv compile_expression(expr x)
                     TYPE_SET_NOT_FIXED(tp);
                 } else if (IS_ARRAY_TYPE(tp)) {
                     TYPE_DESC tq;
-                    TYPE_DESC new_tp = new_type_desc();
-                    *new_tp = *bottom_type(tp);
+                    TYPE_DESC new_tp = clone_type_shallow(bottom_type(tp));
                     tq = tp;
                     while (IS_ARRAY_TYPE(tq)) {
                         if (!IS_ARRAY_TYPE(TYPE_REF(tq)))
@@ -925,8 +926,7 @@ expv compile_expression(expr x)
                     TYPE_REF(tq) = new_tp;
                     TYPE_SET_NOT_FIXED(new_tp);
                 } else {
-                    TYPE_DESC new_tp = new_type_desc();
-                    *new_tp = *tp;
+                    TYPE_DESC new_tp = clone_type_shallow(tp);
                     tp = new_tp;
                     TYPE_SET_NOT_FIXED(tp);
                 }
@@ -1342,17 +1342,17 @@ expv compile_ident_expression(expr x)
         ID_IS_DECLARED(id) = FALSE;
         switch_id_to_proc(id);
         ret = expv_sym_term(IDENT, ID_TYPE(id), ID_SYM(id));
-        sp_link_id(id, SP_ERR_FOWARD_FUNC, current_line);
+        sp_link_id(id, SP_ERR_FOWARD_FUNC, current_line());
     }
 
 done:
 
-#ifdef not
+#ifdef NOT
     if (ret == NULL) {
         /* FEAST change start */
         /* fatal("%s: invalid code", __func__); */
         ret = expv_sym_term(EXPR_CODE(x), NULL, EXPR_SYM(x));
-        sp_link_expr((expr)ret, SP_ERR_FATAL, current_line);
+        sp_link_expr((expr)ret, SP_ERR_FATAL, current_line());
         /* FEAST change  end  */
     }
 #endif
@@ -1445,7 +1445,7 @@ expv compile_substr_ref(expr x)
  *    | (F95_MEMBER_REF expression ident)
  *    | (XMP_COARRAY_REF expression image_selector)
  */
-expv compile_lhs_expression(x) expr x;
+expv compile_lhs_expression(expr x)
 {
     expr x1;
     expv v;
@@ -2532,7 +2532,7 @@ expv compile_function_call_check_intrinsic_arg_type(ID f_id, expr args,
                     TYPE_UNKNOWN ||
                 TYPE_IS_NOT_FIXED(FUNCTION_TYPE_RETURN_TYPE(tp))) {
                 /* ID_TYPE(f_id) = NULL; */
-                sp_link_id(f_id, SP_ERR_UNDEF_TYPE_FUNC, current_line);
+                sp_link_id(f_id, SP_ERR_UNDEF_TYPE_FUNC, current_line());
             }
             /* FEAST add  end  */
 
@@ -2660,7 +2660,7 @@ line_info:
         if (args != NULL) {
             EXPR_LINE(v) = EXPR_LINE(args);
         } else {
-            EXPR_LINE(v) = current_line;
+            EXPR_LINE(v) = current_line();
         }
     }
     return v;
@@ -2915,7 +2915,7 @@ static expv compile_struct_constructor_with_components(const ID struct_id,
     SYMBOL sym;
     expv result, components;
     TYPE_DESC tp;
-    TYPE_DESC this;
+    TYPE_DESC this_td;
 
     components = list0(LIST);
     result = list2(F95_STRUCT_CONSTRUCTOR, NULL, components);
@@ -2924,9 +2924,9 @@ static expv compile_struct_constructor_with_components(const ID struct_id,
     // (PRIVATE works if the derived type is use-associated)
     int is_use_associated = ID_USEASSOC_INFO(struct_id) != NULL;
 
-    this = stp ?: ID_TYPE(struct_id);
+    this_td = stp ?: ID_TYPE(struct_id);
 
-    members = get_struct_members(this);
+    members = get_struct_members(this_td);
     cur = members;
 
     FOR_ITEMS_IN_LIST (lp, args) {
@@ -2934,7 +2934,7 @@ static expv compile_struct_constructor_with_components(const ID struct_id,
         expv v = compile_expression(arg);
 
         if (TYPE_BASIC_TYPE(EXPV_TYPE(v)) == TYPE_STRUCT &&
-            type_is_parent_type(EXPV_TYPE(v), this)) {
+            type_is_parent_type(EXPV_TYPE(v), this_td)) {
             TYPE_DESC stp = get_bottom_ref_type(EXPV_TYPE(v));
             if ((EXPV_CODE(arg) != F_SET_EXPR && is_first_arg) ||
                 (EXPV_CODE(arg) == F_SET_EXPR &&
@@ -3219,8 +3219,7 @@ static expv genCastCall(const char *name, TYPE_DESC tp, expv arg, expv kind)
 }
 
 /* stementment function call */
-expv statement_function_call(f_id, arglist) ID f_id;
-expv arglist;
+expv statement_function_call(ID f_id, expv arglist)
 {
     list arg_lp, param_lp;
     ID id;
@@ -3485,6 +3484,10 @@ static expv compile_array_constructor(expr x)
     FOR_ITEMS_IN_LIST (lp, EXPR_ARG1(x)) {
         v = compile_expression(LIST_ITEM(lp));
         list_put_last(l, v);
+        if(!v)
+        {
+            FATAL_ERROR_WITH_MSG("Trying to read null pointer");
+        }
         tp = EXPV_TYPE(v);
 
         if (IS_ARRAY_TYPE(tp)) {
@@ -3612,8 +3615,8 @@ expv compile_type_bound_procedure_call(expv memberRef, expr args)
         if (ftp) {
             ret_type = FUNCTION_TYPE_RETURN_TYPE(ftp);
         } else {
-            if (debug_flag)
-                fprintf(debug_fp, "There is no appliable type-bound procedure");
+            if (debug_enabled())
+                fprintf(debug_output(), "There is no appliable type-bound procedure");
         }
         /* type-bound generic procedure type does not exist in XcodeML */
         EXPV_TYPE(memberRef) = NULL;
