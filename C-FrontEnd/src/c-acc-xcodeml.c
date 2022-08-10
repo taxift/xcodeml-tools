@@ -194,6 +194,7 @@ char *accDirectiveName(int c)
   case ACC_SYNC: return "SYNC";
   case ACC_FLUSH: return "FLUSH";
   case ACC_YIELD: return "YIELD";
+  case ACC_SERIAL: return "SERIAL";
   case ACC_TARGET_DEV: return "TARGET_DEV";
   default: return "??ACC??";
   }
@@ -256,6 +257,10 @@ char *accClauseName(int c)
   case ACC_BIND: return "BIND";
   case ACC_NOHOST: return "NOHOST";
   case ACC_ROUTINE_ARG: return "ROUTINE_ARG";
+
+  case ACC_PIPE: return "PIPE";  // OpenARC extension
+  case ACC_PIPEIN: return "PIPEIN";  // OpenARC extension
+  case ACC_PIPEOUT: return "PIPEOUT";  // OpenARC extension
 
   default:  return "???ACC clause???";
   }

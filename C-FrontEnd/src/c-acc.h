@@ -25,6 +25,7 @@ enum ACC_pragma {
     ACC_EXIT_DATA   = 212,
     ACC_ATOMIC          = 213, 
     ACC_ROUTINE         = 214,
+    ACC_SERIAL      = 215,
 
     ACC_TARGET_DEV        = 250, // accomn extention directive
 
@@ -91,6 +92,11 @@ enum ACC_pragma_clause {
     ACC_BIND,
     ACC_NOHOST,
     ACC_ROUTINE_ARG,
+
+// OpenARC extension
+    ACC_PIPE,
+    ACC_PIPEIN,
+    ACC_PIPEOUT,
 };
 
 void out_ACC_PRAGMA(FILE *fp, int indent, int pragma_code, CExpr* expr);

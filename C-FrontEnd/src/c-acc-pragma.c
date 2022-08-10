@@ -138,6 +138,22 @@ int parse_ACC_pragma()
 	goto chk_end;
     }
   
+    if(PG_IS_IDENT("serial")){
+	pg_get_token();
+	// if(pg_tok == PG_IDENT){
+	//     if(PG_IS_IDENT("loop")){	/* parallel for */
+	// 	pg_ACC_pragma = ACC_PARALLEL_LOOP;
+	// 	pg_get_token();
+	// 	if((pg_ACC_list = parse_ACC_clauses()) == NULL) 
+	// 	    goto syntax_err;
+	// 	goto chk_end;
+	//     }
+	// }
+	pg_ACC_pragma = ACC_SERIAL;
+	if((pg_ACC_list = parse_ACC_clauses()) == NULL) goto syntax_err;
+	goto chk_end;
+    }
+
     if(PG_IS_IDENT("loop")){
 	pg_ACC_pragma = ACC_LOOP;
 	pg_get_token();
@@ -332,6 +348,18 @@ static CExpr* parse_ACC_clauses()
 	  pg_get_token();
 	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
 	  c = ACC_PG_LIST(ACC_COPY,v);
+      } else if(PG_IS_IDENT("pipein")){   // OpenARC extension
+	  pg_get_token();
+	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
+	  c = ACC_PG_LIST(ACC_PIPEIN,v);
+      } else if(PG_IS_IDENT("pipeout")){  // OpenARC extension
+	  pg_get_token();
+	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
+	  c = ACC_PG_LIST(ACC_PIPEOUT,v);
+      } else if(PG_IS_IDENT("pipe")){     // OpenARC extension
+	  pg_get_token();
+	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
+	  c = ACC_PG_LIST(ACC_PIPE,v);
       } else if(PG_IS_IDENT("create")){
 	  pg_get_token();
 	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
