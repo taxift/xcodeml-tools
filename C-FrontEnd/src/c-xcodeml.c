@@ -1914,8 +1914,7 @@ outx_EXT_DEFS(FILE *fp, int indent, CExpr *expr)
         fprintf(fp, " source=\"");
         outxEscapedStr(fp, s_sourceFileName);
 
-        fprintf(fp, "\" language=\"%s\" time=\"%s\"\n"
-                "              compiler-info=\"%s\" version=\"%s\"",
+        fprintf(fp, "\" language=\"%s\" time=\"%s\" compiler-info=\"%s\" version=\"%s\"",
             C_TARGET_LANG, s_timeStamp, C_FRONTEND_NAME, C_FRONTEND_VER);
     }
 
