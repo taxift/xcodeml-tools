@@ -53,6 +53,7 @@
 static int parse_ACC_pragma(void);
 static CExpr* parse_ACC_clauses(void);
 static CExpr* parse_ACC_namelist(void);
+static CExpr* parse_ACC_bcastmemory_namelist(void); // mnacc extension
 static CExpr* parse_ACC_reduction_namelist(int *r);
 static CExpr* parse_ACC_clause_arg(void);
 static CExpr* parse_ACC_C_subscript_list(void);
@@ -263,7 +264,7 @@ int parse_ACC_pragma()
       goto chk_end;
     }
 
-	// accomn extention directive
+	// accomn extension directive
     // if(PG_IS_IDENT("target_dev")){
 	// pg_ACC_pragma = ACC_TARGET_DEV;
 	// pg_get_token();
@@ -272,7 +273,7 @@ int parse_ACC_pragma()
 	// goto chk_end;
 	// }
 	
-	// mnacc extention directive
+	// mnacc extension directive
 	if(PG_IS_IDENT("reflect")){
 		pg_ACC_pragma = ACC_REFLECT;
 		pg_get_token();
@@ -365,6 +366,22 @@ static CExpr* parse_ACC_clauses()
 	  pg_get_token();
 	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
 	  c = ACC_PG_LIST(ACC_COPY,v);
+      } else if(PG_IS_IDENT("L2B")){   // mnacc extension
+	  pg_get_token();
+	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
+	  c = ACC_PG_LIST(ACC_L2B,v);
+      } else if(PG_IS_IDENT("L1B")){   // mnacc extension
+	  pg_get_token();
+	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
+	  c = ACC_PG_LIST(ACC_L1B,v);
+      } else if(PG_IS_IDENT("MAB")){   // mnacc extension
+	  pg_get_token();
+	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
+	  c = ACC_PG_LIST(ACC_MAB,v);
+      } else if(PG_IS_IDENT("PE")){   // mnacc extension
+	  pg_get_token();
+	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
+	  c = ACC_PG_LIST(ACC_PE,v);
       } else if(PG_IS_IDENT("shadow")){   // mnacc extension
 	  pg_get_token();
 	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
@@ -551,6 +568,58 @@ static CExpr* parse_ACC_namelist()
       pg_get_token();
       goto next;
     } else if(pg_tok == ')'){
+      pg_get_token();
+      return args;
+    } 
+
+    addError(NULL,"ACC: syntax error in ACC pragma clause");
+    return NULL;
+}
+
+// mnacc extension
+static CExpr* parse_ACC_bcastmemory_namelist()
+{
+    CExpr* args = EMPTY_LIST;
+    CExpr* vars = EMPTY_LIST;
+    CExpr* v = NULL;
+    CExpr* list = NULL;
+
+    if(pg_tok != '(') {
+      addError(NULL,"ACC: ACC directive clause requires name list");
+      return NULL;
+    }    
+	pg_get_token();
+    
+ next:
+    if(pg_tok != PG_IDENT){
+      addError(NULL,"ACC: empty name list in ACC directive clause");
+      return NULL;
+    }
+
+    v = pg_tok_val;
+	pg_get_token();
+
+    if(pg_tok != '['){
+      vars = exprListAdd(vars, v);
+    }
+    else{
+      list = parse_ACC_C_subscript_list();
+      CExpr* arrayRef = exprBinary(EC_ARRAY_REF, v, list);
+      vars = exprListAdd(vars, (CExpr*)arrayRef);
+    }
+	
+    if(pg_tok == ','){
+      pg_get_token();
+      goto next;
+	} else if(pg_tok == ';'){
+	  pg_ACC_list = EMPTY_LIST;
+	  pg_ACC_list = exprListCons(ACC_PG_LIST(ACC_REFLECT_ARG, vars), pg_ACC_list);
+	  args = exprListAdd(args, pg_ACC_list);
+      pg_get_token();
+      vars = EMPTY_LIST;
+      goto next;
+    } else if(pg_tok == ')'){
+	  args = exprListAdd(args, ACC_PG_LIST(ACC_REFLECT_ARG, vars));
       pg_get_token();
       return args;
     } 

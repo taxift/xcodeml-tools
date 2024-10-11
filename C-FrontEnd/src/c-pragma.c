@@ -312,6 +312,7 @@ pg_get_token()
     case ')':
     case '(':
     case ',':
+    case ';':  // mnacc extension
     case '.':
     case '[':
     case ']':
