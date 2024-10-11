@@ -261,6 +261,11 @@ char *accClauseName(int c)
   // mnacc extension
   case ACC_REFLECT_ARG: return "REFLECT_ARG";
   case ACC_SHADOW: return "SHADOW";
+  case ACC_L2B: return "L2B";
+  case ACC_L1B: return "L1B";
+  case ACC_MAB: return "MAB";
+  case ACC_PE: return "PE";
+
 
   // case ACC_PIPE: return "PIPE";  // OpenARC extension
   // case ACC_PIPEIN: return "PIPEIN";  // OpenARC extension

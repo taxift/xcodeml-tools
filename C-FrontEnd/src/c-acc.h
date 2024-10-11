@@ -27,7 +27,7 @@ enum ACC_pragma {
     ACC_ROUTINE         = 214,
     ACC_SERIAL      = 215,
 
-    ACC_REFLECT     = 251, // mnacc extention directive
+    ACC_REFLECT     = 251, // mnacc extension directive
 
     ACC_SYNC            = 290,
     ACC_FLUSH           = 291,
@@ -95,7 +95,11 @@ enum ACC_pragma_clause {
 
 // mnacc extension
     ACC_REFLECT_ARG,
-    ACC_SHADOW
+    ACC_SHADOW,
+    ACC_L2B,
+    ACC_L1B,
+    ACC_MAB,
+    ACC_PE
 };
 
 void out_ACC_PRAGMA(FILE *fp, int indent, int pragma_code, CExpr* expr);
