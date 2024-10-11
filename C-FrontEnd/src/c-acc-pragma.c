@@ -264,14 +264,31 @@ int parse_ACC_pragma()
     }
 
 	// accomn extention directive
-    if(PG_IS_IDENT("target_dev")){
-	pg_ACC_pragma = ACC_TARGET_DEV;
-	pg_get_token();
-	if((pg_ACC_list = parse_ACC_namelist()) == NULL) goto syntax_err;	
-	ret= PRAGMA_EXEC;  // independent pragma (enable without { } )
-	goto chk_end;
-	}
+    // if(PG_IS_IDENT("target_dev")){
+	// pg_ACC_pragma = ACC_TARGET_DEV;
+	// pg_get_token();
+	// if((pg_ACC_list = parse_ACC_namelist()) == NULL) goto syntax_err;	
+	// ret= PRAGMA_EXEC;  // independent pragma (enable without { } )
+	// goto chk_end;
+	// }
 	
+	// mnacc extention directive
+	if(PG_IS_IDENT("reflect")){
+		pg_ACC_pragma = ACC_REFLECT;
+		pg_get_token();
+		if(pg_tok == '('){
+			CExpr *x;
+			if((x = parse_ACC_namelist()) == NULL) 
+			goto syntax_err;
+			pg_ACC_list = parse_ACC_clauses();
+			pg_ACC_list = exprListCons(ACC_PG_LIST(ACC_REFLECT_ARG,x), pg_ACC_list);
+		} else {
+			goto syntax_err;
+		}
+		ret= PRAGMA_EXEC;
+		goto chk_end;
+    }
+
     // for PEZY
     if(PG_IS_IDENT("sync")){
         pg_ACC_pragma = ACC_SYNC;
@@ -348,18 +365,22 @@ static CExpr* parse_ACC_clauses()
 	  pg_get_token();
 	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
 	  c = ACC_PG_LIST(ACC_COPY,v);
-      } else if(PG_IS_IDENT("pipein")){   // OpenARC extension
+      } else if(PG_IS_IDENT("shadow")){   // mnacc extension
 	  pg_get_token();
 	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
-	  c = ACC_PG_LIST(ACC_PIPEIN,v);
-      } else if(PG_IS_IDENT("pipeout")){  // OpenARC extension
-	  pg_get_token();
-	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
-	  c = ACC_PG_LIST(ACC_PIPEOUT,v);
-      } else if(PG_IS_IDENT("pipe")){     // OpenARC extension
-	  pg_get_token();
-	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
-	  c = ACC_PG_LIST(ACC_PIPE,v);
+	  c = ACC_PG_LIST(ACC_SHADOW,v);
+    //   } else if(PG_IS_IDENT("pipein")){   // OpenARC extension
+	//   pg_get_token();
+	//   if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
+	//   c = ACC_PG_LIST(ACC_PIPEIN,v);
+    //   } else if(PG_IS_IDENT("pipeout")){  // OpenARC extension
+	//   pg_get_token();
+	//   if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
+	//   c = ACC_PG_LIST(ACC_PIPEOUT,v);
+    //   } else if(PG_IS_IDENT("pipe")){     // OpenARC extension
+	//   pg_get_token();
+	//   if((v = parse_ACC_namelist()) == NULL) goto syntax_err;
+	//   c = ACC_PG_LIST(ACC_PIPE,v);
       } else if(PG_IS_IDENT("create")){
 	  pg_get_token();
 	  if((v = parse_ACC_namelist()) == NULL) goto syntax_err;

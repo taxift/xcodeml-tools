@@ -46,10 +46,10 @@ out_ACC_PRAGMA(FILE *fp, int indent, int pragma_code, CExpr* expr)
       if(EXPR_L_SIZE(clauseList) != 0)
 	  out_ACC_name_list(fp, indent1, clauseList);
 	goto end;
-    case ACC_TARGET_DEV:
-      if(EXPR_L_SIZE(clauseList) != 0)
-  	  out_ACC_name_list(fp, indent1, clauseList);
-	goto end;
+  //   case ACC_TARGET_DEV:
+  //     if(EXPR_L_SIZE(clauseList) != 0)
+  // 	  out_ACC_name_list(fp, indent1, clauseList);
+	// goto end;
     }
 
     outxPrint(fp,indent1,"<list>\n");
@@ -195,7 +195,7 @@ char *accDirectiveName(int c)
   case ACC_FLUSH: return "FLUSH";
   case ACC_YIELD: return "YIELD";
   case ACC_SERIAL: return "SERIAL";
-  case ACC_TARGET_DEV: return "TARGET_DEV";
+  case ACC_REFLECT: return "REFLECT";  // mnacc extension
   default: return "??ACC??";
   }
 }
@@ -257,10 +257,14 @@ char *accClauseName(int c)
   case ACC_BIND: return "BIND";
   case ACC_NOHOST: return "NOHOST";
   case ACC_ROUTINE_ARG: return "ROUTINE_ARG";
+  
+  // mnacc extension
+  case ACC_REFLECT_ARG: return "REFLECT_ARG";
+  case ACC_SHADOW: return "SHADOW";
 
-  case ACC_PIPE: return "PIPE";  // OpenARC extension
-  case ACC_PIPEIN: return "PIPEIN";  // OpenARC extension
-  case ACC_PIPEOUT: return "PIPEOUT";  // OpenARC extension
+  // case ACC_PIPE: return "PIPE";  // OpenARC extension
+  // case ACC_PIPEIN: return "PIPEIN";  // OpenARC extension
+  // case ACC_PIPEOUT: return "PIPEOUT";  // OpenARC extension
 
   default:  return "???ACC clause???";
   }

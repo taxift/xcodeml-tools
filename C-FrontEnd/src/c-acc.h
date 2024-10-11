@@ -27,7 +27,7 @@ enum ACC_pragma {
     ACC_ROUTINE         = 214,
     ACC_SERIAL      = 215,
 
-    ACC_TARGET_DEV        = 250, // accomn extention directive
+    ACC_REFLECT     = 251, // mnacc extention directive
 
     ACC_SYNC            = 290,
     ACC_FLUSH           = 291,
@@ -93,10 +93,9 @@ enum ACC_pragma_clause {
     ACC_NOHOST,
     ACC_ROUTINE_ARG,
 
-// OpenARC extension
-    ACC_PIPE,
-    ACC_PIPEIN,
-    ACC_PIPEOUT,
+// mnacc extension
+    ACC_REFLECT_ARG,
+    ACC_SHADOW
 };
 
 void out_ACC_PRAGMA(FILE *fp, int indent, int pragma_code, CExpr* expr);
